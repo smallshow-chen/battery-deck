@@ -299,6 +299,17 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
   margin: auto 0;
 }
 
+.battery-shell::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 8px;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0) 12%, rgba(255, 255, 255, 0.46) 48%, rgba(255, 255, 255, 0) 82%);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .battery-shell::after {
   content: "";
   position: absolute;
@@ -311,7 +322,50 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
   background: rgba(18, 29, 47, 0.9);
 }
 
+.battery-charge-icon {
+  position: absolute;
+  top: -10px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 252, 232, 0.96), rgba(255, 239, 180, 0.94));
+  border: 1px solid rgba(194, 139, 23, 0.24);
+  color: #a96a00;
+  font-size: 13px;
+  line-height: 1;
+  box-shadow: 0 8px 16px rgba(194, 139, 23, 0.16);
+  opacity: 0;
+  transform: translateY(4px) scale(0.9);
+  transition:
+    opacity 180ms ease,
+    transform 220ms ease;
+  pointer-events: none;
+}
+
+.battery-shell.charging {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.74),
+    0 0 0 1px rgba(76, 221, 132, 0.18),
+    0 10px 24px rgba(22, 163, 74, 0.14);
+}
+
+.battery-shell.charging::before {
+  animation: battery-shell-glow 2.2s ease-in-out infinite;
+}
+
+.battery-shell.charging .battery-charge-icon {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: battery-bolt-pop 1.8s ease-in-out infinite;
+}
+
 .battery-fill {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -325,16 +379,37 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
   overflow: hidden;
 }
 
+.battery-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(105deg, rgba(255, 255, 255, 0) 20%, rgba(255, 255, 255, 0.34) 48%, rgba(255, 255, 255, 0) 78%);
+  transform: translateX(-140%);
+  opacity: 0;
+}
+
 .battery-fill.charge-low  { background: linear-gradient(90deg, #ff7a6a 0%, #dc3d35 100%); }
 .battery-fill.charge-mid  { background: linear-gradient(90deg, #f4b438 0%, #dd8a10 100%); }
 .battery-fill.charge-good { background: linear-gradient(90deg, #4ddd84 0%, #16a34a 100%); }
 .battery-fill.charge-full { background: linear-gradient(90deg, #3ad98b 0%, #0f9f62 100%); }
 
+.battery-fill.charging::after {
+  opacity: 1;
+  animation: battery-fill-sweep 1.8s linear infinite;
+}
+
 .battery-percent {
+  position: relative;
+  z-index: 1;
   font-size: clamp(22px, 2.6vw, 30px);
   font-weight: 800;
   color: #fff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.battery-shell.charging .battery-percent {
+  animation: battery-percent-breathe 1.8s ease-in-out infinite;
 }
 
 /* Battery meta grid */
@@ -729,6 +804,32 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
 /* ── Keyframes ──────────────────────────────────────────────────────────── */
 @keyframes spin       { to   { transform: rotate(360deg); } }
 @keyframes pulse-dot  { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+@keyframes battery-shell-glow {
+  0%, 100% { opacity: 0.18; }
+  50% { opacity: 0.52; }
+}
+@keyframes battery-fill-sweep {
+  from { transform: translateX(-140%); }
+  to { transform: translateX(140%); }
+}
+@keyframes battery-percent-breathe {
+  0%, 100% { transform: translateY(0); text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+  50% { transform: translateY(-1px); text-shadow: 0 2px 8px rgba(255, 255, 255, 0.28); }
+}
+@keyframes battery-bolt-pop {
+  0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 8px 16px rgba(194, 139, 23, 0.16); }
+  50% { transform: translateY(-1px) scale(1.06); box-shadow: 0 10px 20px rgba(194, 139, 23, 0.24); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battery-shell.charging::before,
+  .battery-fill.charging::after,
+  .battery-shell.charging .battery-percent,
+  .battery-shell.charging .battery-charge-icon,
+  .indicator-dot.charging {
+    animation: none;
+  }
+}
 
 /* ── Responsive (≤920px) ────────────────────────────────────────────────── */
 @media (max-width: 920px) {

@@ -3,7 +3,10 @@ pub mod helper;
 mod service;
 mod smc;
 
-use battery::{BatteryHealth, BatteryRealtime, BatteryState, ChargerInfo, ServiceStatus, Settings, SystemInfo};
+use battery::{
+    BatteryCache, BatteryHealth, BatteryRealtime, BatteryState, ChargerInfo, DashboardSnapshot,
+    ServiceStatus, Settings, SystemInfo,
+};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::{
@@ -35,11 +38,24 @@ const MENU_START_SERVICE: &str = "tray.start_service";
 const MENU_STOP_SERVICE: &str = "tray.stop_service";
 const MENU_QUIT: &str = "tray.quit";
 
-#[derive(Default)]
+struct AppCache(BatteryCache);
+
 struct AppState {
     window_visible: AtomicBool,
     quitting: AtomicBool,
     tray: Mutex<Option<TrayMenuHandles>>,
+    cache: AppCache,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            window_visible: AtomicBool::new(false),
+            quitting: AtomicBool::new(false),
+            tray: Mutex::new(None),
+            cache: AppCache(BatteryCache::new()),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -63,20 +79,26 @@ struct TrayActionErrorPayload {
     message: String,
 }
 
-fn build_battery_state() -> Result<BatteryState, String> {
-    let (percent, is_charging) = battery::get_battery_info().unwrap_or((0, false));
-    let is_plugged = battery::get_is_plugged();
-    let helper_state = service::helper_state().unwrap_or_else(|error| battery::HelperState {
+fn fallback_helper_state(error: Option<String>) -> battery::HelperState {
+    battery::HelperState {
         mode: battery::ChargeMode::Standard,
         charging_disabled: false,
         power_disabled: false,
         supported: false,
         control_available: false,
         settings: helper::load_settings(),
-        last_error: Some(error),
-    });
+        last_error: error,
+    }
+}
 
-    Ok(BatteryState {
+fn build_battery_state_with_cache(
+    cache: &BatteryCache,
+    helper_state: &battery::HelperState,
+) -> BatteryState {
+    let (percent, is_charging) = battery::get_battery_info_cached(cache).unwrap_or((0, false));
+    let is_plugged = battery::get_is_plugged_cached(cache);
+
+    BatteryState {
         enabled: true,
         power_disabled: helper_state.power_disabled,
         connected: !helper_state.power_disabled,
@@ -91,8 +113,33 @@ fn build_battery_state() -> Result<BatteryState, String> {
         magsafe_sync: helper_state.settings.magsafe_sync,
         supported: helper_state.supported,
         control_available: helper_state.control_available,
-        last_error: helper_state.last_error,
-    })
+        last_error: helper_state.last_error.clone(),
+    }
+}
+
+fn build_dashboard_snapshot(app: &AppHandle) -> DashboardSnapshot {
+    let cache = &app.state::<AppState>().cache.0;
+    let helper_result = service::helper_state();
+    let helper_error = helper_result.as_ref().err().cloned();
+    let helper_state = helper_result
+        .as_ref()
+        .ok()
+        .cloned()
+        .unwrap_or_else(|| fallback_helper_state(helper_error.clone()));
+
+    DashboardSnapshot {
+        battery_state: build_battery_state_with_cache(cache, &helper_state),
+        service_status: service::derive_service_status(helper_result.as_ref().ok(), helper_error),
+        battery_health: battery::get_battery_health_cached(cache),
+        battery_realtime: battery::get_battery_realtime_cached(cache),
+        charger_info: battery::get_charger_info_cached(cache),
+        system_info: battery::get_system_info_cached(cache),
+        settings: helper_state.settings,
+    }
+}
+
+fn build_battery_state(app: &AppHandle) -> Result<BatteryState, String> {
+    Ok(build_dashboard_snapshot(app).battery_state)
 }
 
 fn main_window(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -211,13 +258,9 @@ fn service_label(state: &BatteryState, service_status: &ServiceStatus) -> String
 }
 
 fn refresh_tray_menu(app: &AppHandle) -> Result<(), String> {
-    let battery_state = build_battery_state()?;
-    let service_status = service::get_service_status().unwrap_or(ServiceStatus {
-        installed: false,
-        running: false,
-        control_available: false,
-        last_error: None,
-    });
+    let snapshot = build_dashboard_snapshot(app);
+    let battery_state = snapshot.battery_state;
+    let service_status = snapshot.service_status;
 
     with_tray_handles(app, |tray| {
         let control_ready = battery_state.control_available && service_status.control_available;
@@ -430,7 +473,10 @@ fn setup_tray(app: &AppHandle) -> Result<(), String> {
             MENU_CHARGE_LIMIT => handle_tray_action(app, perform_charge_to_limit),
             MENU_RESUME_LIMITS => handle_tray_action(app, perform_reset_charge_mode),
             MENU_DISABLE_CHARGING => handle_tray_action(app, perform_disable_charging),
-            MENU_TOGGLE_ADAPTER => handle_tray_action(app, perform_toggle_adapter),
+            MENU_TOGGLE_ADAPTER => {
+                let app_clone = app.clone();
+                handle_tray_action(app, || perform_toggle_adapter(&app_clone))
+            }
             MENU_INSTALL_SERVICE => handle_tray_action(app, perform_install_service),
             MENU_START_SERVICE => handle_tray_action(app, perform_start_service),
             MENU_STOP_SERVICE => handle_tray_action(app, perform_stop_service),
@@ -526,8 +572,8 @@ fn perform_enable_adapter() -> Result<(), String> {
     Ok(())
 }
 
-fn perform_toggle_adapter() -> Result<(), String> {
-    let state = build_battery_state()?;
+fn perform_toggle_adapter(app: &AppHandle) -> Result<(), String> {
+    let state = build_battery_state(app)?;
     if state.power_disabled {
         perform_enable_adapter()
     } else {
@@ -553,8 +599,8 @@ fn perform_stop_service() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn get_battery_state(_: State<AppState>) -> Result<BatteryState, String> {
-    build_battery_state()
+fn get_battery_state(app: AppHandle, _: State<AppState>) -> Result<BatteryState, String> {
+    build_battery_state(&app)
 }
 
 #[tauri::command]
@@ -612,8 +658,8 @@ fn enable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn is_supported(_: State<AppState>) -> Result<bool, String> {
-    Ok(build_battery_state()?.supported)
+fn is_supported(app: AppHandle, _: State<AppState>) -> Result<bool, String> {
+    Ok(build_battery_state(&app)?.supported)
 }
 
 #[tauri::command]
@@ -648,23 +694,39 @@ fn get_service_logs(_: State<AppState>, lines: Option<usize>) -> Result<String, 
 }
 
 #[tauri::command]
-fn get_battery_health() -> Result<Option<BatteryHealth>, String> {
-    Ok(battery::get_battery_health())
+fn get_battery_health(_: State<AppState>, app: AppHandle) -> Result<Option<BatteryHealth>, String> {
+    Ok(battery::get_battery_health_cached(
+        &app.state::<AppState>().cache.0,
+    ))
 }
 
 #[tauri::command]
-fn get_battery_realtime() -> Result<Option<BatteryRealtime>, String> {
-    Ok(battery::get_battery_realtime())
+fn get_battery_realtime(
+    _: State<AppState>,
+    app: AppHandle,
+) -> Result<Option<BatteryRealtime>, String> {
+    Ok(battery::get_battery_realtime_cached(
+        &app.state::<AppState>().cache.0,
+    ))
 }
 
 #[tauri::command]
-fn get_charger_info() -> Result<Option<ChargerInfo>, String> {
-    Ok(battery::get_charger_info())
+fn get_charger_info(_: State<AppState>, app: AppHandle) -> Result<Option<ChargerInfo>, String> {
+    Ok(battery::get_charger_info_cached(
+        &app.state::<AppState>().cache.0,
+    ))
 }
 
 #[tauri::command]
-fn get_system_info() -> Result<Option<SystemInfo>, String> {
-    Ok(battery::get_system_info())
+fn get_system_info(_: State<AppState>, app: AppHandle) -> Result<Option<SystemInfo>, String> {
+    Ok(battery::get_system_info_cached(
+        &app.state::<AppState>().cache.0,
+    ))
+}
+
+#[tauri::command]
+fn get_dashboard_snapshot(app: AppHandle, _: State<AppState>) -> Result<DashboardSnapshot, String> {
+    Ok(build_dashboard_snapshot(&app))
 }
 
 #[tauri::command]
@@ -699,7 +761,7 @@ fn spawn_battery_poll(app_handle: AppHandle) {
                 continue;
             }
 
-            if let Ok(state) = build_battery_state() {
+            if let Ok(state) = build_battery_state(&app_handle) {
                 if let Ok(serialized) = serde_json::to_string(&state) {
                     if last_state.as_deref() != Some(serialized.as_str()) {
                         last_state = Some(serialized);
@@ -716,7 +778,6 @@ fn spawn_battery_poll(app_handle: AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppState::default())
-        .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             setup_tray(&app_handle)?;
@@ -743,6 +804,7 @@ pub fn run() {
             get_battery_realtime,
             get_charger_info,
             get_system_info,
+            get_dashboard_snapshot,
             reset_charge_mode,
         ])
         .run(tauri::generate_context!())

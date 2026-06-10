@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SERVICE_LABEL: &str = "com.smallshow.battery-toolkit-helper";
@@ -62,6 +62,13 @@ fn sibling_helper_bin() -> Option<PathBuf> {
     let current = std::env::current_exe().ok()?;
     let candidate = current.with_file_name("battery-helper");
     candidate.exists().then_some(candidate)
+}
+
+fn service_installed() -> bool {
+    launch_daemon_path().exists()
+        || user_installed_bin().exists()
+        || sibling_helper_bin().is_some()
+        || launch_agent_path().exists()
 }
 
 fn helper_source_bin() -> Result<PathBuf, String> {
@@ -241,6 +248,20 @@ fn temp_artifact(name: &str, contents: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+fn command_output_message(output: &Output) -> Option<String> {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return Some(stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return Some(stdout);
+    }
+
+    None
+}
+
 fn run_privileged_script(body: &str) -> Result<(), String> {
     let script = temp_artifact("root-service.sh", &format!("#!/bin/sh\nset -e\n{}\n", body))?;
     let chmod_status = Command::new("chmod")
@@ -253,7 +274,7 @@ fn run_privileged_script(body: &str) -> Result<(), String> {
     }
 
     let shell_command = format!("/bin/sh {}", quote_shell(script.to_string_lossy().as_ref()));
-    let status = Command::new("osascript")
+    let output = Command::new("osascript")
         .args([
             "-e",
             &format!(
@@ -261,13 +282,19 @@ fn run_privileged_script(body: &str) -> Result<(), String> {
                 quote_applescript(&shell_command)
             ),
         ])
-        .status()
+        .output()
         .map_err(|e| e.to_string())?;
 
     let _ = fs::remove_file(&script);
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
+    } else if let Some(message) = command_output_message(&output) {
+        if message.contains("User canceled") {
+            Err("Administrator authorization was canceled".to_string())
+        } else {
+            Err(format!("Administrator authorization failed: {}", message))
+        }
     } else {
         Err("Administrator authorization failed".to_string())
     }
@@ -277,9 +304,13 @@ fn install_root_service() -> Result<(), String> {
     let source = helper_source_bin()?;
     let target = system_installed_bin();
     let plist_path = temp_artifact("launchd.plist", &system_plist_contents(&target))?;
+    let runtime_dir = helper::socket_path()
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(std::env::temp_dir);
 
     let body = format!(
-        "mkdir -p {support_dir}\nmkdir -p {bin_dir}\ninstall -m 755 {source} {target}\ninstall -d -m 755 /Library/LaunchDaemons\ninstall -m 644 {plist_src} {plist_dst}\nlaunchctl bootout system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid}\nlaunchctl bootstrap system {plist_dst}\n",
+        "install -d -o root -g wheel -m 755 {support_dir}\ninstall -d -o root -g wheel -m 755 {bin_dir}\ninstall -d -m 755 {runtime_dir}\ninstall -o root -g wheel -m 755 {source} {target}\ninstall -d -o root -g wheel -m 755 /Library/LaunchDaemons\ninstall -o root -g wheel -m 644 {plist_src} {plist_dst}\nlaunchctl bootout system/{label} >/dev/null 2>&1 || true\nlaunchctl enable system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid} {stdout_log} {stderr_log}\nlaunchctl bootstrap system {plist_dst}\nlaunchctl kickstart -k system/{label} >/dev/null 2>&1 || true\n",
         support_dir = quote_shell(helper::system_helper_root().to_string_lossy().as_ref()),
         bin_dir = quote_shell(
             target
@@ -288,6 +319,7 @@ fn install_root_service() -> Result<(), String> {
                 .to_string_lossy()
                 .as_ref(),
         ),
+        runtime_dir = quote_shell(runtime_dir.to_string_lossy().as_ref()),
         source = quote_shell(source.to_string_lossy().as_ref()),
         target = quote_shell(target.to_string_lossy().as_ref()),
         plist_src = quote_shell(plist_path.to_string_lossy().as_ref()),
@@ -295,6 +327,8 @@ fn install_root_service() -> Result<(), String> {
         label = SERVICE_LABEL,
         socket = quote_shell(helper::socket_path().to_string_lossy().as_ref()),
         pid = quote_shell(helper::helper_pid_path().to_string_lossy().as_ref()),
+        stdout_log = quote_shell(helper::helper_stdout_log_path().to_string_lossy().as_ref()),
+        stderr_log = quote_shell(helper::helper_stderr_log_path().to_string_lossy().as_ref()),
     );
 
     let result = run_privileged_script(&body);
@@ -308,11 +342,13 @@ fn restart_root_service() -> Result<(), String> {
     }
 
     let body = format!(
-        "launchctl bootout system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid}\nlaunchctl bootstrap system {plist}\n",
+        "launchctl bootout system/{label} >/dev/null 2>&1 || true\nlaunchctl enable system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid} {stdout_log} {stderr_log}\nlaunchctl bootstrap system {plist}\nlaunchctl kickstart -k system/{label} >/dev/null 2>&1 || true\n",
         label = SERVICE_LABEL,
         socket = quote_shell(helper::socket_path().to_string_lossy().as_ref()),
         pid = quote_shell(helper::helper_pid_path().to_string_lossy().as_ref()),
         plist = quote_shell(launch_daemon_path().to_string_lossy().as_ref()),
+        stdout_log = quote_shell(helper::helper_stdout_log_path().to_string_lossy().as_ref()),
+        stderr_log = quote_shell(helper::helper_stderr_log_path().to_string_lossy().as_ref()),
     );
     run_privileged_script(&body)
 }
@@ -369,7 +405,6 @@ fn spawn_fallback() -> Result<(), String> {
 }
 
 pub fn install_service() -> Result<(), String> {
-    let _ = stop_service();
     install_root_service()
 }
 
@@ -427,18 +462,27 @@ pub fn stop_service() -> Result<(), String> {
     }
 }
 
+pub fn derive_service_status(
+    helper_state: Option<&HelperState>,
+    request_error: Option<String>,
+) -> ServiceStatus {
+    ServiceStatus {
+        installed: service_installed(),
+        running: helper_state.is_some(),
+        control_available: helper_state.is_some_and(|state| state.control_available),
+        last_error: helper_state
+            .and_then(|state| state.last_error.clone())
+            .or(request_error),
+    }
+}
+
 pub fn get_service_status() -> Result<ServiceStatus, String> {
-    let running = ping().is_ok();
-    let state = helper_state().ok();
-    Ok(ServiceStatus {
-        installed: launch_daemon_path().exists()
-            || user_installed_bin().exists()
-            || sibling_helper_bin().is_some()
-            || launch_agent_path().exists(),
-        running,
-        control_available: state.as_ref().is_some_and(|s| s.control_available),
-        last_error: state.and_then(|s| s.last_error),
-    })
+    let helper_result = helper_state();
+    let request_error = helper_result.as_ref().err().cloned();
+    Ok(derive_service_status(
+        helper_result.as_ref().ok(),
+        request_error,
+    ))
 }
 
 pub fn helper_state() -> Result<HelperState, String> {

@@ -39,8 +39,7 @@ let scrollResumeTimer = null;
 let isUserScrolling = false;
 let uiFramePending = false;
 let needsUiRefresh = false;
-let lastServicePollAt = 0;
-let lastBatteryPollAt = 0;
+let lastSnapshotPollAt = 0;
 let lastRealtimePollAt = 0;
 let scrollContainers = [];
 let windowVisible = true;
@@ -76,6 +75,7 @@ function cacheDom() {
   dom.connectionText = document.getElementById("connection-text");
   dom.connectionStatusDisplay = document.getElementById("connection-status-display");
 
+  dom.batteryShell = document.getElementById("battery-shell");
   dom.batteryFill = document.getElementById("battery-fill");
   dom.batteryPercent = document.getElementById("battery-percent");
   dom.chargePercentDisplay = document.getElementById("charge-percent-display");
@@ -137,7 +137,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 async function initialize() {
   try {
-    await refreshVisibleState();
+    await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
     startPolling();
     setupEventListener();
   } catch (err) {
@@ -149,93 +149,88 @@ async function initialize() {
 }
 
 // ---- Tauri Invocations ----
-async function refreshBatteryHealth() {
-  try {
-    const h = await invoke("get_battery_health");
-    if (!h) return;
-    dom.healthCycles.textContent = h.cycleCount;
-    dom.healthPercent.textContent = h.healthPercent + "%";
-    dom.capDesign.textContent = h.designCapacity + " mAh";
-    dom.capMax.textContent = h.maxCapacity + " mAh";
-    dom.capCurrent.textContent = h.currentCapacity + " mAh";
-  } catch (err) {
-    console.warn("Could not load battery health:", err);
-  }
-}
-
 async function refreshRealtime() {
   try {
     const rt = await invoke("get_battery_realtime");
     if (!rt) return;
-    dom.rtTemp.textContent = rt.temperature.toFixed(1);
-    dom.rtPower.textContent = rt.power.toFixed(2);
-    dom.rtVoltage.textContent = (rt.voltage / 1000).toFixed(3) + " V";
-    dom.rtCurrent.textContent = rt.amperage + " mA";
+    updateRealtimeMetrics(rt);
   } catch (err) {
     console.warn("Could not load realtime data:", err);
   }
 }
 
-async function refreshChargerInfo() {
-  try {
-    const c = await invoke("get_charger_info");
-    if (!c) return;
-    dom.chargerName.textContent = c.name;
-    dom.chargerWattage.textContent = c.connected ? c.wattage + "W" : "—";
-    dom.chargerVoltage.textContent = c.connected ? c.chargingVoltage + " mV" : "—";
-    dom.chargerCurrent.textContent = c.connected ? c.chargingCurrent + " mA" : "—";
-  } catch (err) {
-    console.warn("Could not load charger info:", err);
-  }
+function updateBatteryHealth(health) {
+  if (!health) return;
+  dom.healthCycles.textContent = health.cycleCount;
+  dom.healthPercent.textContent = health.healthPercent + "%";
+  dom.capDesign.textContent = health.designCapacity + " mAh";
+  dom.capMax.textContent = health.maxCapacity + " mAh";
+  dom.capCurrent.textContent = health.currentCapacity + " mAh";
 }
 
-async function refreshSystemInfo() {
-  try {
-    const info = await invoke("get_system_info");
-    if (!info) return;
-    dom.deviceModel.textContent = info.modelName;
-    dom.deviceChip.textContent = info.chip;
-    dom.deviceMemory.textContent = info.memoryGb + " GB";
-    dom.deviceActivated.textContent = info.activationDate || "--";
-  } catch (err) {
-    console.warn("Could not load system info:", err);
-  }
+function updateRealtimeMetrics(rt) {
+  if (!rt) return;
+  dom.rtTemp.textContent = rt.temperature.toFixed(1);
+  dom.rtPower.textContent = rt.power.toFixed(2);
+  dom.rtVoltage.textContent = (rt.voltage / 1000).toFixed(3) + " V";
+  dom.rtCurrent.textContent = rt.amperage + " mA";
 }
 
-async function refreshBatteryState() {
+function updateChargerInfo(charger) {
+  if (!charger) return;
+  dom.chargerName.textContent = charger.name;
+  dom.chargerWattage.textContent = charger.connected ? charger.wattage + "W" : "—";
+  dom.chargerVoltage.textContent = charger.connected ? charger.chargingVoltage + " mV" : "—";
+  dom.chargerCurrent.textContent = charger.connected ? charger.chargingCurrent + " mA" : "—";
+}
+
+function updateSystemInfo(info) {
+  if (!info) return;
+  dom.deviceModel.textContent = info.modelName;
+  dom.deviceChip.textContent = info.chip;
+  dom.deviceMemory.textContent = info.memoryGb + " GB";
+  dom.deviceActivated.textContent = info.activationDate || "--";
+}
+
+async function loadDashboardSnapshot() {
   try {
-    const batteryState = await invoke("get_battery_state");
-    Object.assign(state, batteryState);
+    const snapshot = await invoke("get_dashboard_snapshot");
+    if (!snapshot) return;
+
+    if (snapshot.batteryState) {
+      Object.assign(state, snapshot.batteryState);
+    }
+    if (snapshot.serviceStatus) {
+      Object.assign(serviceState, snapshot.serviceStatus);
+      if (!state.controlAvailable) {
+        state.controlAvailable = snapshot.serviceStatus.controlAvailable;
+      }
+    }
+    if (snapshot.settings) {
+      state.minCharge = snapshot.settings.minCharge;
+      state.maxCharge = snapshot.settings.maxCharge;
+      state.adapterSleep = snapshot.settings.adapterSleep;
+      state.magsafeSync = snapshot.settings.magsafeSync;
+      updateSettingsUI();
+    }
+
+    updateBatteryHealth(snapshot.batteryHealth);
+    updateRealtimeMetrics(snapshot.batteryRealtime);
+    updateChargerInfo(snapshot.chargerInfo);
+    updateSystemInfo(snapshot.systemInfo);
+    lastSnapshotPollAt = Date.now();
+    lastRealtimePollAt = lastSnapshotPollAt;
     scheduleUiUpdate();
   } catch (err) {
-    console.error("Failed to get battery state:", err);
+    console.error("Failed to load dashboard snapshot:", err);
     state.controlAvailable = false;
     state.lastError = formatError(err);
-    scheduleUiUpdate();
-    if (serviceState.running) {
-      showError("Could not read battery state: " + formatError(err));
-    }
-  }
-}
-
-async function refreshServiceStatus() {
-  try {
-    const status = await invoke("get_service_status");
-    serviceState.installed = status.installed;
-    serviceState.running = status.running;
-    serviceState.controlAvailable = status.controlAvailable;
-    serviceState.lastError = status.lastError;
-    if (!state.controlAvailable) {
-      state.controlAvailable = status.controlAvailable;
-    }
-    scheduleUiUpdate();
-  } catch (err) {
-    console.error("Failed to get service status:", err);
-    serviceState.installed = false;
-    serviceState.running = false;
     serviceState.controlAvailable = false;
     serviceState.lastError = formatError(err);
     scheduleUiUpdate();
+    if (serviceState.running) {
+      showError("Could not load dashboard snapshot: " + formatError(err));
+    }
   }
 }
 
@@ -249,33 +244,7 @@ async function refreshServiceLogs() {
 }
 
 async function refreshVisibleState() {
-  await Promise.all([
-    refreshServiceStatus(),
-    refreshBatteryState(),
-    refreshBatteryHealth(),
-    refreshRealtime(),
-    refreshChargerInfo(),
-    refreshSystemInfo(),
-    loadSettings(),
-    refreshServiceLogs(),
-  ]);
-}
-
-async function loadSettings() {
-  try {
-    const settings = await invoke("get_settings");
-    state.minCharge = settings.minCharge;
-    state.maxCharge = settings.maxCharge;
-    state.adapterSleep = settings.adapterSleep;
-    state.magsafeSync = settings.magsafeSync;
-    updateSettingsUI();
-  } catch (err) {
-    console.error("Failed to get settings:", err);
-    updateSettingsUI();
-    if (state.controlAvailable) {
-      showError("Could not load settings: " + formatError(err));
-    }
-  }
+  await loadDashboardSnapshot();
 }
 
 async function applySettings() {
@@ -382,7 +351,7 @@ async function onChargeToFull() {
     setButtonsDisabled(true);
     await invoke("charge_to_full");
     showSuccess(__("msg.charging_full"));
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -395,7 +364,7 @@ async function onChargeToLimit() {
     setButtonsDisabled(true);
     await invoke("charge_to_limit");
     showSuccess(__("msg.charging_limit"));
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -408,7 +377,7 @@ async function onResetChargeMode() {
     setButtonsDisabled(true);
     await invoke("reset_charge_mode");
     showSuccess(__("msg.mode_reset"));
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -421,7 +390,7 @@ async function onDisableCharging() {
     setButtonsDisabled(true);
     await invoke("disable_charging_cmd");
     showSuccess(__("msg.charging_disabled"));
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -439,7 +408,7 @@ async function onToggleAdapter() {
       await invoke("disable_adapter_cmd");
       showSuccess(__("msg.adapter_disabled"));
     }
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -451,8 +420,7 @@ async function onInstallService() {
   try {
     setServiceButtonsDisabled(true);
     await invoke("install_service");
-    await refreshServiceStatus();
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
     await refreshServiceLogs();
     showSuccess(__("msg.service_installed"));
   } catch (err) {
@@ -466,8 +434,7 @@ async function onStartService() {
   try {
     setServiceButtonsDisabled(true);
     await invoke("start_service");
-    await refreshServiceStatus();
-    await refreshBatteryState();
+    await loadDashboardSnapshot();
     await refreshServiceLogs();
     showSuccess(__("msg.service_started"));
   } catch (err) {
@@ -481,7 +448,7 @@ async function onStopService() {
   try {
     setServiceButtonsDisabled(true);
     await invoke("stop_service");
-    await refreshServiceStatus();
+    await loadDashboardSnapshot();
     await refreshServiceLogs();
     showSuccess(__("msg.service_stopped"));
   } catch (err) {
@@ -494,7 +461,7 @@ async function onStopService() {
 async function onRefreshLogs() {
   try {
     setServiceButtonsDisabled(true);
-    await Promise.all([refreshServiceStatus(), refreshServiceLogs()]);
+    await refreshServiceLogs();
   } finally {
     setServiceButtonsDisabled(false);
   }
@@ -550,7 +517,7 @@ function setupEventListener() {
       return;
     }
 
-    await refreshVisibleState();
+    await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
     startPolling();
   }).catch((err) => {
     console.warn("Could not listen for app-window-visibility-changed events:", err);
@@ -585,7 +552,6 @@ function stopPolling() {
 }
 
 function startPolling() {
-  let lastExternal = null;
   stopPolling();
   pollTimer = setInterval(async () => {
     if (!windowVisible || settingsDirty || isUserScrolling) {
@@ -593,29 +559,15 @@ function startPolling() {
     }
 
     const now = Date.now();
-    const tasks = [];
-
-    if (now - lastServicePollAt >= 15000) {
-      lastServicePollAt = now;
-      tasks.push(refreshServiceStatus());
-    }
-    if (now - lastBatteryPollAt >= 8000) {
-      lastBatteryPollAt = now;
-      tasks.push(refreshBatteryState());
-    }
-    if (now - lastRealtimePollAt >= 5000) {
+    if (now - lastSnapshotPollAt >= 30000) {
+      lastSnapshotPollAt = now;
       lastRealtimePollAt = now;
-      tasks.push(refreshRealtime());
+      await loadDashboardSnapshot();
+      return;
     }
-
-    if (tasks.length > 0) {
-      await Promise.all(tasks);
-    }
-
-    const currentExternal = state.isPlugged;
-    if (currentExternal !== lastExternal) {
-      lastExternal = currentExternal;
-      await refreshChargerInfo();
+    if (now - lastRealtimePollAt >= 15000) {
+      lastRealtimePollAt = now;
+      await refreshRealtime();
     }
   }, 5000);
 }
@@ -634,10 +586,17 @@ function updateUI() {
 
 function updateBatteryDisplay() {
   const pct = state.chargePercent ?? 0;
+  const isActivelyCharging =
+    state.isCharging &&
+    state.isPlugged &&
+    !state.powerDisabled &&
+    !state.chargingDisabled;
 
   // Battery fill width
   dom.batteryFill.style.width = pct + "%";
   dom.batteryPercent.textContent = pct + "%";
+  dom.batteryFill.classList.toggle("charging", isActivelyCharging);
+  dom.batteryShell.classList.toggle("charging", isActivelyCharging);
 
   // Battery color
   dom.batteryFill.classList.remove(
