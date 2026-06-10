@@ -1,12 +1,14 @@
-use crate::battery::{get_battery_percent, validate_settings, ChargeMode, HelperState, RuntimeState, Settings};
+use crate::battery::{
+    get_battery_percent, validate_settings, ChargeMode, HelperState, RuntimeState, Settings,
+};
 use crate::smc::{self, SmcHandle};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -294,7 +296,11 @@ fn apply_settings(shared: &SharedState, settings: Settings) -> Result<HelperStat
 }
 
 fn current_state(shared: &SharedState) -> Result<HelperState, String> {
-    shared.data.lock().map(|s| s.clone()).map_err(|e| e.to_string())
+    shared
+        .data
+        .lock()
+        .map(|s| s.clone())
+        .map_err(|e| e.to_string())
 }
 
 fn update_mode(shared: &SharedState, mode: ChargeMode) -> Result<HelperState, String> {
@@ -397,7 +403,9 @@ fn handle_request(shared: &SharedState, request: Request) -> Response {
 fn handle_stream(shared: &SharedState, stream: UnixStream) -> Result<(), String> {
     let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
     let mut input = String::new();
-    reader.read_to_string(&mut input).map_err(|e| e.to_string())?;
+    reader
+        .read_to_string(&mut input)
+        .map_err(|e| e.to_string())?;
     let request: Request = serde_json::from_str(&input).map_err(|e| e.to_string())?;
     let response = handle_request(shared, request);
     let mut writer = stream;
@@ -440,7 +448,11 @@ pub fn helper_logs(lines: usize) -> Result<String, String> {
 }
 
 pub fn helper_pid() -> Option<u32> {
-    fs::read_to_string(helper_pid_path()).ok()?.trim().parse().ok()
+    fs::read_to_string(helper_pid_path())
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
 }
 
 pub fn run_daemon() -> Result<(), String> {

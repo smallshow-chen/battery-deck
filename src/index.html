@@ -32,6 +32,24 @@
           <h1 class="app-title" data-i18n="app.title">Battery Toolkit</h1>
           <p class="app-subtitle" data-i18n="app.subtitle">Battery control for Apple Silicon Macs</p>
         </div>
+        <div class="titlebar-metrics">
+          <div class="title-metric-pill">
+            <span class="title-metric-label" data-i18n="rt.temperature">Temperature</span>
+            <span class="title-metric-value"><span id="rt-temp">--</span><span class="title-metric-unit">°C</span></span>
+          </div>
+          <div class="title-metric-pill">
+            <span class="title-metric-label" data-i18n="rt.power">Power</span>
+            <span class="title-metric-value"><span id="rt-power">--</span><span class="title-metric-unit">W</span></span>
+          </div>
+          <div class="title-metric-pill">
+            <span class="title-metric-label" data-i18n="rt.voltage">Voltage</span>
+            <span class="title-metric-value" id="rt-voltage">-- V</span>
+          </div>
+          <div class="title-metric-pill">
+            <span class="title-metric-label" data-i18n="rt.current">Current</span>
+            <span class="title-metric-value" id="rt-current">-- mA</span>
+          </div>
+        </div>
         <div class="status-badges">
           <span class="badge" id="badge-enabled">Enabled</span>
           <span class="badge" id="badge-mode">Standard</span>
@@ -50,44 +68,155 @@
         </div>
       </div>
 
-      <div class="dashboard-grid">
-        <main class="primary-column">
-          <section class="panel panel-hero">
-            <div class="panel-header">
-              <div>
-                <span class="panel-eyebrow" data-i18n="section.overview">Overview</span>
-                <h2 class="panel-title" data-i18n="section.battery_status">Battery Status</h2>
-              </div>
-              <span class="connection-indicator" id="connection-indicator">
-                <span class="indicator-dot" id="indicator-dot"></span>
-                <span id="connection-text" data-i18n="status.disconnected">Disconnected</span>
-              </span>
-            </div>
-
-            <div class="hero-layout">
-              <div class="hero-battery">
-                <div class="battery-shell">
-                  <div class="battery-fill" id="battery-fill">
-                    <span class="battery-percent" id="battery-percent">--%</span>
-                  </div>
+      <div class="dashboard-scroll" id="dashboard-scroll">
+        <main class="dashboard-stack">
+          <div class="hero-stage">
+            <section class="panel panel-hero panel-overview">
+              <div class="panel-header">
+                <div>
+                  <span class="panel-eyebrow" data-i18n="section.overview">Overview</span>
+                  <h2 class="panel-title" data-i18n="section.battery_status">Battery Status</h2>
                 </div>
-                <div class="battery-meta">
-                  <div class="detail-row">
-                    <span class="detail-label" data-i18n="label.charge">Charge</span>
-                    <span class="detail-value" id="charge-percent-display">--</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="detail-label" data-i18n="label.state">State</span>
-                    <span class="detail-value" id="charging-state-display">Unknown</span>
-                  </div>
-                  <div class="detail-row">
-                    <span class="detail-label" data-i18n="label.adapter">Adapter</span>
-                    <span class="detail-value" id="adapter-state-display">Unknown</span>
-                  </div>
-                </div>
+                <span class="connection-indicator" id="connection-indicator">
+                  <span class="indicator-dot" id="indicator-dot"></span>
+                  <span id="connection-text" data-i18n="status.disconnected">Disconnected</span>
+                </span>
               </div>
 
-              <div class="hero-actions">
+              <div class="overview-layout">
+                <div class="overview-main">
+                  <div class="battery-shell">
+                    <div class="battery-fill" id="battery-fill">
+                      <span class="battery-percent" id="battery-percent">--%</span>
+                    </div>
+                  </div>
+
+                  <div class="battery-meta">
+                    <div class="detail-row">
+                      <span class="detail-label" data-i18n="label.charge">Charge</span>
+                      <span class="detail-value" id="charge-percent-display">--</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label" data-i18n="label.state">State</span>
+                      <span class="detail-value" id="charging-state-display">Unknown</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label" data-i18n="label.adapter">Adapter</span>
+                      <span class="detail-value" id="adapter-state-display">Unknown</span>
+                    </div>
+                    <div class="detail-row">
+                      <span class="detail-label" data-i18n="label.connection">Connection</span>
+                      <span class="detail-value" id="connection-status-display">Disconnected</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="overview-health">
+                  <div class="compact-section-label" data-i18n="section.health_snapshot">Health</div>
+
+                  <div class="health-compact-grid">
+                    <div class="health-item health-item-compact">
+                      <span class="health-value" id="health-cycles">--</span>
+                      <span class="health-label" data-i18n="health.cycle_count">Cycle Count</span>
+                    </div>
+                    <div class="health-item health-item-compact">
+                      <span class="health-value" id="health-percent">--%</span>
+                      <span class="health-label" data-i18n="health.battery_life">Battery Life</span>
+                    </div>
+                  </div>
+
+                  <div class="capacity-strip">
+                    <div class="capacity-item">
+                      <span class="capacity-value" id="cap-design">--</span>
+                      <span class="capacity-label" data-i18n="health.design_capacity">Design Capacity</span>
+                    </div>
+                    <div class="capacity-item">
+                      <span class="capacity-value" id="cap-max">--</span>
+                      <span class="capacity-label" data-i18n="health.actual_capacity">Actual Capacity</span>
+                    </div>
+                    <div class="capacity-item">
+                      <span class="capacity-value" id="cap-current">--</span>
+                      <span class="capacity-label" data-i18n="health.current_capacity">Current Capacity</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel panel-service" id="service-card">
+              <div class="panel-header">
+                <div>
+                  <span class="panel-eyebrow" data-i18n="section.runtime">Runtime</span>
+                  <h2 class="panel-title" data-i18n="section.service">Service</h2>
+                </div>
+                <span class="connection-indicator">
+                  <span class="indicator-dot" id="service-indicator-dot"></span>
+                  <span id="service-status-label" data-i18n="service.stopped">Stopped</span>
+                </span>
+              </div>
+
+              <div class="service-grid">
+                <div class="detail-row">
+                  <span class="detail-label" data-i18n="service.installed">Installed</span>
+                  <span class="detail-value" id="service-installed-value">No</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label" data-i18n="service.running">Running</span>
+                  <span class="detail-value" id="service-running-value">No</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label" data-i18n="service.control">Control</span>
+                  <span class="detail-value" id="service-control-value">Unavailable</span>
+                </div>
+              </div>
+
+              <div class="slider-validation service-summary" id="service-error-text"></div>
+
+              <div class="service-actions">
+                <button class="action-btn action-secondary" id="btn-install-service">
+                  <span class="btn-icon">&#128230;</span>
+                  <span data-i18n="btn.install_service">Install Service</span>
+                </button>
+                <button class="action-btn action-primary" id="btn-start-service">
+                  <span class="btn-icon">&#9654;</span>
+                  <span data-i18n="btn.start_service">Start Service</span>
+                </button>
+                <button class="action-btn action-warning" id="btn-stop-service">
+                  <span class="btn-icon">&#9632;</span>
+                  <span data-i18n="btn.stop_service">Stop Service</span>
+                </button>
+              </div>
+
+              <div class="service-support">
+                <div class="compact-section-label" data-i18n="section.power_input">Power Input</div>
+                <div class="charger-main service-power-card">
+                  <span class="charger-name" id="charger-name">--</span>
+                  <span class="charger-wattage" id="charger-wattage">--W</span>
+                </div>
+                <div class="charger-details service-power-details">
+                  <div class="charger-detail">
+                    <span class="charger-detail-label" data-i18n="charger.voltage">Output Voltage</span>
+                    <span class="charger-detail-value" id="charger-voltage">-- mV</span>
+                  </div>
+                  <div class="charger-detail">
+                    <span class="charger-detail-label" data-i18n="charger.current">Output Current</span>
+                    <span class="charger-detail-value" id="charger-current">-- mA</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div class="controls-stage">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <span class="panel-eyebrow" data-i18n="section.strategy">Charge Strategy</span>
+                  <h2 class="panel-title" data-i18n="section.actions">Actions</h2>
+                </div>
+              </div>
+
+              <div class="actions-grid actions-grid-main">
                 <button class="action-btn action-primary" id="btn-charge-full">
                   <span class="btn-icon">&#9889;</span>
                   <span data-i18n="btn.charge_full">Charge to Full</span>
@@ -104,254 +233,122 @@
                   <span class="btn-icon">&#9940;</span>
                   <span data-i18n="btn.disable_charging">Disable Charging</span>
                 </button>
-                <button class="action-btn action-danger" id="btn-toggle-adapter">
+                <button class="action-btn action-danger action-span-full" id="btn-toggle-adapter">
                   <span class="btn-icon">&#9211;</span>
                   <span id="adapter-btn-text" data-i18n="btn.disable_adapter">Disable Adapter</span>
                 </button>
               </div>
-            </div>
-          </section>
+            </section>
 
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <span class="panel-eyebrow" data-i18n="section.strategy">Charge Strategy</span>
-                <h2 class="panel-title" data-i18n="section.charge_limits">Charge Limits</h2>
-              </div>
-            </div>
-
-            <div class="slider-group">
-              <div class="slider-row">
-                <label class="slider-label" for="min-charge-slider">
-                  <span data-i18n="label.min_charge">Min Charge</span>
-                  <span class="slider-value" id="min-charge-value">75%</span>
-                </label>
-                <div class="slider-container">
-                  <input
-                    type="range"
-                    id="min-charge-slider"
-                    class="custom-slider"
-                    min="20"
-                    max="100"
-                    value="75"
-                    step="1"
-                  />
-                  <div class="slider-track">
-                    <div class="slider-track-fill" id="min-charge-fill"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="slider-row">
-                <label class="slider-label" for="max-charge-slider">
-                  <span data-i18n="label.max_charge">Max Charge</span>
-                  <span class="slider-value" id="max-charge-value">80%</span>
-                </label>
-                <div class="slider-container">
-                  <input
-                    type="range"
-                    id="max-charge-slider"
-                    class="custom-slider"
-                    min="50"
-                    max="100"
-                    value="80"
-                    step="1"
-                  />
-                  <div class="slider-track">
-                    <div class="slider-track-fill" id="max-charge-fill"></div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="slider-validation" id="slider-validation"></div>
-            </div>
-          </section>
-
-          <div class="metrics-grid">
-            <section class="panel" id="health-card">
+            <section class="panel">
               <div class="panel-header">
                 <div>
-                  <span class="panel-eyebrow" data-i18n="section.health_snapshot">Health</span>
-                  <h2 class="panel-title" data-i18n="section.battery_health">Battery Health</h2>
+                  <span class="panel-eyebrow" data-i18n="section.strategy">Charge Strategy</span>
+                  <h2 class="panel-title" data-i18n="section.charge_limits">Charge Limits</h2>
                 </div>
               </div>
 
-              <div class="health-grid">
-                <div class="health-item">
-                  <span class="health-value" id="health-cycles">--</span>
-                  <span class="health-label" data-i18n="health.cycle_count">Cycle Count</span>
+              <div class="slider-group">
+                <div class="slider-row">
+                  <label class="slider-label" for="min-charge-slider">
+                    <span data-i18n="label.min_charge">Min Charge</span>
+                    <span class="slider-value" id="min-charge-value">75%</span>
+                  </label>
+                  <div class="slider-container">
+                    <input
+                      type="range"
+                      id="min-charge-slider"
+                      class="custom-slider"
+                      min="20"
+                      max="100"
+                      value="75"
+                      step="1"
+                    />
+                    <div class="slider-track">
+                      <div class="slider-track-fill" id="min-charge-fill"></div>
+                    </div>
+                  </div>
                 </div>
-                <div class="health-item">
-                  <span class="health-value" id="health-percent">--%</span>
-                  <span class="health-label" data-i18n="health.battery_life">Battery Life</span>
-                </div>
-              </div>
 
-              <div class="capacity-grid">
-                <div class="capacity-item">
-                  <span class="capacity-value" id="cap-design">--</span>
-                  <span class="capacity-label" data-i18n="health.design_capacity">Design Capacity</span>
+                <div class="slider-row">
+                  <label class="slider-label" for="max-charge-slider">
+                    <span data-i18n="label.max_charge">Max Charge</span>
+                    <span class="slider-value" id="max-charge-value">80%</span>
+                  </label>
+                  <div class="slider-container">
+                    <input
+                      type="range"
+                      id="max-charge-slider"
+                      class="custom-slider"
+                      min="20"
+                      max="100"
+                      value="80"
+                      step="1"
+                    />
+                    <div class="slider-track">
+                      <div class="slider-track-fill" id="max-charge-fill"></div>
+                    </div>
+                  </div>
                 </div>
-                <div class="capacity-item">
-                  <span class="capacity-value" id="cap-max">--</span>
-                  <span class="capacity-label" data-i18n="health.actual_capacity">Actual Capacity</span>
-                </div>
-                <div class="capacity-item">
-                  <span class="capacity-value" id="cap-current">--</span>
-                  <span class="capacity-label" data-i18n="health.current_capacity">Current Capacity</span>
-                </div>
+
+                <div class="slider-validation" id="slider-validation"></div>
               </div>
             </section>
 
-            <section class="panel" id="realtime-card">
+            <section class="panel panel-settings">
               <div class="panel-header">
                 <div>
-                  <span class="panel-eyebrow" data-i18n="section.live_metrics">Live Metrics</span>
-                  <h2 class="panel-title" data-i18n="section.realtime">Realtime</h2>
+                  <span class="panel-eyebrow" data-i18n="section.automation">Automation</span>
+                  <h2 class="panel-title" data-i18n="section.settings">Settings</h2>
                 </div>
               </div>
 
-              <div class="realtime-grid">
-                <div class="realtime-item">
-                  <span class="realtime-icon">&#127777;</span>
-                  <span class="realtime-value" id="rt-temp">--</span>
-                  <span class="realtime-unit">°C</span>
-                  <span class="realtime-label" data-i18n="rt.temperature">Temperature</span>
+              <div class="settings-list">
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <span class="setting-name" data-i18n="setting.adapter_sleep">Disable sleep when adapter disabled</span>
+                    <span class="setting-desc" data-i18n="setting.adapter_sleep_desc">Prevents the system from sleeping when the power adapter is disabled</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-adapter-sleep" />
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
-                <div class="realtime-item">
-                  <span class="realtime-icon">&#9889;</span>
-                  <span class="realtime-value" id="rt-power">--</span>
-                  <span class="realtime-unit">W</span>
-                  <span class="realtime-label" data-i18n="rt.power">Power</span>
-                </div>
-              </div>
 
-              <div class="realtime-row">
-                <div class="realtime-detail">
-                  <span class="realtime-detail-label" data-i18n="rt.voltage">Voltage</span>
-                  <span class="realtime-detail-value" id="rt-voltage">-- V</span>
-                </div>
-                <div class="realtime-detail">
-                  <span class="realtime-detail-label" data-i18n="rt.current">Current</span>
-                  <span class="realtime-detail-value" id="rt-current">-- mA</span>
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <span class="setting-name" data-i18n="setting.magsafe_sync">Sync MagSafe LED</span>
+                    <span class="setting-desc" data-i18n="setting.magsafe_sync_desc">Synchronize the MagSafe LED indicator with charging state</span>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-magsafe-sync" />
+                    <span class="toggle-slider"></span>
+                  </label>
                 </div>
               </div>
             </section>
           </div>
-        </main>
 
-        <aside class="secondary-column">
-          <section class="panel" id="service-card">
-            <div class="panel-header">
+          <details class="panel diagnostics-panel">
+            <summary class="diagnostics-summary">
               <div>
-                <span class="panel-eyebrow" data-i18n="section.runtime">Runtime</span>
-                <h2 class="panel-title" data-i18n="section.service">Service</h2>
+                <span class="panel-eyebrow" data-i18n="section.diagnostics">Diagnostics</span>
+                <h2 class="panel-title" data-i18n="section.service_log">Service Log</h2>
               </div>
-              <span class="connection-indicator">
-                <span class="indicator-dot" id="service-indicator-dot"></span>
-                <span id="service-status-label" data-i18n="service.stopped">Stopped</span>
-              </span>
-            </div>
+              <span class="diagnostics-toggle">Show</span>
+            </summary>
 
-            <div class="service-grid">
-              <div class="detail-row">
-                <span class="detail-label" data-i18n="service.installed">Installed</span>
-                <span class="detail-value" id="service-installed-value">No</span>
+            <div class="diagnostics-body">
+              <div class="diagnostics-actions">
+                <button class="action-btn" id="btn-refresh-logs">
+                  <span class="btn-icon">&#8635;</span>
+                  <span data-i18n="btn.refresh_logs">Refresh Logs</span>
+                </button>
               </div>
-              <div class="detail-row">
-                <span class="detail-label" data-i18n="service.running">Running</span>
-                <span class="detail-value" id="service-running-value">No</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label" data-i18n="service.control">Control</span>
-                <span class="detail-value" id="service-control-value">Unavailable</span>
-              </div>
-            </div>
-
-            <div class="service-actions">
-              <button class="action-btn action-secondary" id="btn-install-service">
-                <span class="btn-icon">&#128230;</span>
-                <span data-i18n="btn.install_service">Install Service</span>
-              </button>
-              <button class="action-btn action-primary" id="btn-start-service">
-                <span class="btn-icon">&#9654;</span>
-                <span data-i18n="btn.start_service">Start Service</span>
-              </button>
-              <button class="action-btn action-warning" id="btn-stop-service">
-                <span class="btn-icon">&#9632;</span>
-                <span data-i18n="btn.stop_service">Stop Service</span>
-              </button>
-              <button class="action-btn" id="btn-refresh-logs">
-                <span class="btn-icon">&#8635;</span>
-                <span data-i18n="btn.refresh_logs">Refresh Logs</span>
-              </button>
-            </div>
-
-            <div class="service-log-wrap">
-              <div class="slider-validation" id="service-error-text"></div>
               <pre class="service-log" id="service-log">--</pre>
             </div>
-          </section>
-
-          <section class="panel" id="charger-card">
-            <div class="panel-header">
-              <div>
-                <span class="panel-eyebrow" data-i18n="section.power_input">Power Input</span>
-                <h2 class="panel-title" data-i18n="section.charger">Charger</h2>
-              </div>
-            </div>
-
-            <div class="charger-info">
-              <div class="charger-main">
-                <span class="charger-name" id="charger-name">--</span>
-                <span class="charger-wattage" id="charger-wattage">--W</span>
-              </div>
-              <div class="charger-details">
-                <div class="charger-detail">
-                  <span class="charger-detail-label" data-i18n="charger.voltage">Output Voltage</span>
-                  <span class="charger-detail-value" id="charger-voltage">-- mV</span>
-                </div>
-                <div class="charger-detail">
-                  <span class="charger-detail-label" data-i18n="charger.current">Output Current</span>
-                  <span class="charger-detail-value" id="charger-current">-- mA</span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="panel">
-            <div class="panel-header">
-              <div>
-                <span class="panel-eyebrow" data-i18n="section.automation">Automation</span>
-                <h2 class="panel-title" data-i18n="section.settings">Settings</h2>
-              </div>
-            </div>
-
-            <div class="settings-list">
-              <div class="setting-row">
-                <div class="setting-info">
-                  <span class="setting-name" data-i18n="setting.adapter_sleep">Disable sleep when adapter disabled</span>
-                  <span class="setting-desc" data-i18n="setting.adapter_sleep_desc">Prevents the system from sleeping when the power adapter is disabled</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="toggle-adapter-sleep" />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div class="setting-row">
-                <div class="setting-info">
-                  <span class="setting-name" data-i18n="setting.magsafe_sync">Sync MagSafe LED</span>
-                  <span class="setting-desc" data-i18n="setting.magsafe_sync_desc">Synchronize the MagSafe LED indicator with charging state</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="toggle-magsafe-sync" />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-          </section>
-        </aside>
+          </details>
+        </main>
       </div>
     </div>
   </body>

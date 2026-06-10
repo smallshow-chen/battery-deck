@@ -182,7 +182,10 @@ fn launchctl_bootstrap_user() -> Result<(), String> {
     }
 
     let _ = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}/{}", uid_string(), SERVICE_LABEL)])
+        .args([
+            "bootout",
+            &format!("gui/{}/{}", uid_string(), SERVICE_LABEL),
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
@@ -208,7 +211,10 @@ fn launchctl_bootout_user() -> Result<(), String> {
         return Ok(());
     }
     let status = Command::new("launchctl")
-        .args(["bootout", &format!("gui/{}/{}", uid_string(), SERVICE_LABEL)])
+        .args([
+            "bootout",
+            &format!("gui/{}/{}", uid_string(), SERVICE_LABEL),
+        ])
         .status()
         .map_err(|e| e.to_string())?;
     if status.success() {
@@ -236,10 +242,7 @@ fn temp_artifact(name: &str, contents: &str) -> Result<PathBuf, String> {
 }
 
 fn run_privileged_script(body: &str) -> Result<(), String> {
-    let script = temp_artifact(
-        "root-service.sh",
-        &format!("#!/bin/sh\nset -e\n{}\n", body),
-    )?;
+    let script = temp_artifact("root-service.sh", &format!("#!/bin/sh\nset -e\n{}\n", body))?;
     let chmod_status = Command::new("chmod")
         .args(["755", script.to_string_lossy().as_ref()])
         .status()
@@ -380,7 +383,8 @@ pub fn start_service() -> Result<ServiceStatus, String> {
         return wait_until_running();
     }
 
-    if install_user_service().is_ok() && launchctl_available() && launchctl_bootstrap_user().is_ok() {
+    if install_user_service().is_ok() && launchctl_available() && launchctl_bootstrap_user().is_ok()
+    {
         let status = wait_until_running()?;
         if status.running {
             return Ok(status);

@@ -296,10 +296,7 @@ fn smc_read_key(connect: u32, key: &[u8; 4]) -> io::Result<(Vec<u8>, SMCKeyInfoD
     if result.result != K_SMC_SUCCESS {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            format!(
-                "SMC ReadKey {:?} returned error: {}",
-                key, result.result
-            ),
+            format!("SMC ReadKey {:?} returned error: {}", key, result.result),
         ));
     }
 
@@ -338,10 +335,7 @@ fn smc_write_key(connect: u32, key: &[u8; 4], data: &[u8]) -> io::Result<()> {
     if result.result != K_SMC_SUCCESS {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            format!(
-                "SMC WriteKey {:?} returned error: {}",
-                key, result.result
-            ),
+            format!("SMC WriteKey {:?} returned error: {}", key, result.result),
         ));
     }
 
@@ -409,7 +403,10 @@ pub fn probe_supported(handle: &SmcHandle) -> io::Result<SupportedKeys> {
 
 /// Try to disable charging using CHTE first, falling back to CH0C.
 pub fn disable_charging(handle: &SmcHandle) -> io::Result<()> {
-    if handle.write_key(keys::CHTE, &[0x01, 0x00, 0x00, 0x00]).is_ok() {
+    if handle
+        .write_key(keys::CHTE, &[0x01, 0x00, 0x00, 0x00])
+        .is_ok()
+    {
         return Ok(());
     }
     handle.write_key(keys::CH0C, &[0x01])
@@ -417,7 +414,10 @@ pub fn disable_charging(handle: &SmcHandle) -> io::Result<()> {
 
 /// Try to enable charging using CHTE first, falling back to CH0C.
 pub fn enable_charging(handle: &SmcHandle) -> io::Result<()> {
-    if handle.write_key(keys::CHTE, &[0x00, 0x00, 0x00, 0x00]).is_ok() {
+    if handle
+        .write_key(keys::CHTE, &[0x00, 0x00, 0x00, 0x00])
+        .is_ok()
+    {
         return Ok(());
     }
     handle.write_key(keys::CH0C, &[0x00])

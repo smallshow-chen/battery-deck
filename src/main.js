@@ -43,6 +43,7 @@ let lastServicePollAt = 0;
 let lastBatteryPollAt = 0;
 let lastRealtimePollAt = 0;
 let scrollContainers = [];
+let windowVisible = true;
 
 // ---- DOM References ----
 const dom = {};
@@ -50,8 +51,7 @@ const dom = {};
 function cacheDom() {
   dom.loadingOverlay = document.getElementById("loading-overlay");
   dom.appShell = document.getElementById("app");
-  dom.primaryColumn = document.querySelector(".primary-column");
-  dom.secondaryColumn = document.querySelector(".secondary-column");
+  dom.dashboardScroll = document.getElementById("dashboard-scroll");
   dom.errorToast = document.getElementById("error-toast");
   dom.errorMessage = document.getElementById("error-message");
   dom.errorClose = document.getElementById("error-close");
@@ -74,6 +74,7 @@ function cacheDom() {
 
   dom.indicatorDot = document.getElementById("indicator-dot");
   dom.connectionText = document.getElementById("connection-text");
+  dom.connectionStatusDisplay = document.getElementById("connection-status-display");
 
   dom.batteryFill = document.getElementById("battery-fill");
   dom.batteryPercent = document.getElementById("battery-percent");
@@ -118,25 +119,20 @@ function cacheDom() {
   dom.chargerVoltage = document.getElementById("charger-voltage");
   dom.chargerCurrent = document.getElementById("charger-current");
 
-  scrollContainers = [dom.primaryColumn, dom.secondaryColumn].filter(Boolean);
+  scrollContainers = [dom.dashboardScroll].filter(Boolean);
 }
 
 // ---- Initialization ----
 window.addEventListener("DOMContentLoaded", async () => {
   cacheDom();
   bindEvents();
+  updateSettingsUI();
   await initialize();
 });
 
 async function initialize() {
   try {
-    await refreshServiceStatus();
-    await refreshBatteryState();
-    await refreshBatteryHealth();
-    await refreshRealtime();
-    await refreshChargerInfo();
-    await loadSettings();
-    await refreshServiceLogs();
+    await refreshVisibleState();
     startPolling();
     setupEventListener();
   } catch (err) {
@@ -234,6 +230,18 @@ async function refreshServiceLogs() {
   }
 }
 
+async function refreshVisibleState() {
+  await Promise.all([
+    refreshServiceStatus(),
+    refreshBatteryState(),
+    refreshBatteryHealth(),
+    refreshRealtime(),
+    refreshChargerInfo(),
+    loadSettings(),
+    refreshServiceLogs(),
+  ]);
+}
+
 async function loadSettings() {
   try {
     const settings = await invoke("get_settings");
@@ -244,6 +252,7 @@ async function loadSettings() {
     updateSettingsUI();
   } catch (err) {
     console.error("Failed to get settings:", err);
+    updateSettingsUI();
     if (state.controlAvailable) {
       showError("Could not load settings: " + formatError(err));
     }
@@ -509,14 +518,58 @@ function setupEventListener() {
   }).catch((err) => {
     console.warn("Could not listen for battery-state-changed events:", err);
   });
+
+  listen("app-window-visibility-changed", async (event) => {
+    const visible =
+      typeof event.payload === "boolean"
+        ? event.payload
+        : !!event.payload?.visible;
+
+    windowVisible = visible;
+    if (!visible) {
+      stopPolling();
+      return;
+    }
+
+    await refreshVisibleState();
+    startPolling();
+  }).catch((err) => {
+    console.warn("Could not listen for app-window-visibility-changed events:", err);
+  });
+
+  listen("app-state-refresh-requested", async () => {
+    if (!windowVisible) {
+      return;
+    }
+    await refreshVisibleState();
+  }).catch((err) => {
+    console.warn("Could not listen for app-state-refresh-requested events:", err);
+  });
+
+  listen("tray-action-error", async (event) => {
+    const message = event.payload?.message || formatError(event.payload);
+    showError(message);
+    if (windowVisible) {
+      await refreshVisibleState();
+    }
+  }).catch((err) => {
+    console.warn("Could not listen for tray-action-error events:", err);
+  });
 }
 
 // ---- Polling ----
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 function startPolling() {
   let lastExternal = null;
-  if (pollTimer) clearInterval(pollTimer);
+  stopPolling();
   pollTimer = setInterval(async () => {
-    if (settingsDirty || isUserScrolling) {
+    if (!windowVisible || settingsDirty || isUserScrolling) {
       return;
     }
 
@@ -643,20 +696,24 @@ function updateStatusBadges() {
 
 function updateConnectionIndicator() {
   dom.indicatorDot.classList.remove("connected", "charging");
+  let connectionLabel = __("status.disconnected");
 
   if (state.isPlugged && !state.powerDisabled) {
     if (state.isCharging && !state.chargingDisabled) {
       dom.indicatorDot.classList.add("charging");
-      dom.connectionText.textContent = __("status.charging");
+      connectionLabel = __("status.charging");
     } else {
       dom.indicatorDot.classList.add("connected");
-      dom.connectionText.textContent = __("status.connected");
+      connectionLabel = __("status.connected");
     }
   } else if (state.isPlugged) {
     dom.indicatorDot.classList.add("connected");
-    dom.connectionText.textContent = __("status.connected");
-  } else {
-    dom.connectionText.textContent = __("status.disconnected");
+    connectionLabel = __("status.connected");
+  }
+
+  dom.connectionText.textContent = connectionLabel;
+  if (dom.connectionStatusDisplay) {
+    dom.connectionStatusDisplay.textContent = connectionLabel;
   }
 }
 
@@ -679,8 +736,23 @@ function updateActionButtons() {
   dom.btnToggleAdapter.classList.toggle("is-selected", !!state.powerDisabled);
 }
 
+function isExpectedServiceMissingError(error) {
+  if (!error) {
+    return false;
+  }
+
+  const message = String(error).toLowerCase();
+  return (
+    message.includes("no such file or directory") ||
+    message.includes("connection refused") ||
+    message.includes("failed to connect") ||
+    message.includes("os error 2")
+  );
+}
+
 function updateUnsupportedBanner() {
-  dom.unsupportedBanner.style.display = state.supported ? "none" : "flex";
+  const shouldShow = serviceState.running && !state.supported;
+  dom.unsupportedBanner.style.display = shouldShow ? "flex" : "none";
 }
 
 function updateControlAvailability() {
@@ -694,13 +766,16 @@ function updateControlAvailability() {
 }
 
 function updateServiceCard() {
+  const rawError = serviceState.lastError || state.lastError || "";
+  const showError = serviceState.running || !isExpectedServiceMissingError(rawError);
+
   dom.serviceInstalledValue.textContent = serviceState.installed ? __("service.yes") : __("service.no");
   dom.serviceRunningValue.textContent = serviceState.running ? __("service.yes") : __("service.no");
   dom.serviceControlValue.textContent = serviceState.controlAvailable
     ? __("service.available")
     : __("service.unavailable");
-  dom.serviceErrorText.textContent = serviceState.lastError || state.lastError || "";
-  dom.serviceErrorText.className = serviceState.lastError || state.lastError
+  dom.serviceErrorText.textContent = showError ? rawError : "";
+  dom.serviceErrorText.className = showError && rawError
     ? "slider-validation error"
     : "slider-validation";
 

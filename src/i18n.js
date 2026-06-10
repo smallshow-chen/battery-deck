@@ -38,6 +38,7 @@ const TRANSLATIONS = {
     "label.charge": "Charge",
     "label.state": "State",
     "label.adapter": "Adapter",
+    "label.connection": "Connection",
     "status.disconnected": "Disconnected",
     "status.charging": "Charging",
     "status.connected": "Connected",
@@ -66,6 +67,8 @@ const TRANSLATIONS = {
 
     // Settings card
     "section.settings": "Settings",
+    "section.diagnostics": "Diagnostics",
+    "section.service_log": "Service Log",
     "setting.adapter_sleep": "Disable sleep when adapter disabled",
     "setting.adapter_sleep_desc":
       "Prevents the system from sleeping when the power adapter is disabled",
@@ -150,6 +153,7 @@ const TRANSLATIONS = {
     "label.charge": "电量",
     "label.state": "状态",
     "label.adapter": "适配器",
+    "label.connection": "连接",
     "status.disconnected": "未连接",
     "status.charging": "充电中",
     "status.connected": "已连接",
@@ -175,6 +179,8 @@ const TRANSLATIONS = {
     "btn.refresh_logs": "刷新日志",
 
     "section.settings": "设置",
+    "section.diagnostics": "诊断",
+    "section.service_log": "服务日志",
     "setting.adapter_sleep": "禁用适配器时阻止系统睡眠",
     "setting.adapter_sleep_desc": "当电源适配器被禁用时，阻止系统进入睡眠状态",
     "setting.magsafe_sync": "同步 MagSafe 指示灯",
