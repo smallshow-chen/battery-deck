@@ -91,6 +91,12 @@ const TRANSLATIONS = {
     "charger.voltage": "Output Voltage",
     "charger.current": "Output Current",
 
+    // Device Info
+    "device.model": "Model",
+    "device.chip": "Chip",
+    "device.memory": "Memory",
+    "device.activated": "Activated",
+
     // Battery Health card
     "section.battery_health": "Battery Health",
     "health.cycle_count": "Cycle Count",
@@ -197,6 +203,11 @@ const TRANSLATIONS = {
     "section.charger": "充电器",
     "charger.voltage": "输出电压",
     "charger.current": "输出电流",
+
+    "device.model": "机型",
+    "device.chip": "芯片",
+    "device.memory": "内存",
+    "device.activated": "激活日期",
 
     "section.battery_health": "电池健康",
     "health.cycle_count": "循环次数",

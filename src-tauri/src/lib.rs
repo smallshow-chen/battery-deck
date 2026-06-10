@@ -3,7 +3,7 @@ pub mod helper;
 mod service;
 mod smc;
 
-use battery::{BatteryHealth, BatteryRealtime, BatteryState, ChargerInfo, ServiceStatus, Settings};
+use battery::{BatteryHealth, BatteryRealtime, BatteryState, ChargerInfo, ServiceStatus, Settings, SystemInfo};
 use serde::Serialize;
 use serde_json::Value;
 use std::sync::{
@@ -663,6 +663,11 @@ fn get_charger_info() -> Result<Option<ChargerInfo>, String> {
 }
 
 #[tauri::command]
+fn get_system_info() -> Result<Option<SystemInfo>, String> {
+    Ok(battery::get_system_info())
+}
+
+#[tauri::command]
 fn reset_charge_mode(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_reset_charge_mode()?;
     let _ = refresh_tray_menu(&app);
@@ -737,6 +742,7 @@ pub fn run() {
             get_battery_health,
             get_battery_realtime,
             get_charger_info,
+            get_system_info,
             reset_charge_mode,
         ])
         .run(tauri::generate_context!())

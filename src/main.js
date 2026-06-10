@@ -119,6 +119,11 @@ function cacheDom() {
   dom.chargerVoltage = document.getElementById("charger-voltage");
   dom.chargerCurrent = document.getElementById("charger-current");
 
+  dom.deviceModel = document.getElementById("device-model");
+  dom.deviceChip = document.getElementById("device-chip");
+  dom.deviceMemory = document.getElementById("device-memory");
+  dom.deviceActivated = document.getElementById("device-activated");
+
   scrollContainers = [dom.dashboardScroll].filter(Boolean);
 }
 
@@ -184,6 +189,19 @@ async function refreshChargerInfo() {
   }
 }
 
+async function refreshSystemInfo() {
+  try {
+    const info = await invoke("get_system_info");
+    if (!info) return;
+    dom.deviceModel.textContent = info.modelName;
+    dom.deviceChip.textContent = info.chip;
+    dom.deviceMemory.textContent = info.memoryGb + " GB";
+    dom.deviceActivated.textContent = info.activationDate || "--";
+  } catch (err) {
+    console.warn("Could not load system info:", err);
+  }
+}
+
 async function refreshBatteryState() {
   try {
     const batteryState = await invoke("get_battery_state");
@@ -237,6 +255,7 @@ async function refreshVisibleState() {
     refreshBatteryHealth(),
     refreshRealtime(),
     refreshChargerInfo(),
+    refreshSystemInfo(),
     loadSettings(),
     refreshServiceLogs(),
   ]);

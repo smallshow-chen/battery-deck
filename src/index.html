@@ -85,6 +85,25 @@
 
               <div class="overview-layout">
                 <div class="overview-main">
+                  <div class="device-strip">
+                    <div class="device-item card">
+                      <span class="device-label label-caps" data-i18n="device.model">Model</span>
+                      <span class="device-value" id="device-model">--</span>
+                    </div>
+                    <div class="device-item card">
+                      <span class="device-label label-caps" data-i18n="device.chip">Chip</span>
+                      <span class="device-value" id="device-chip">--</span>
+                    </div>
+                    <div class="device-item card">
+                      <span class="device-label label-caps" data-i18n="device.memory">Memory</span>
+                      <span class="device-value" id="device-memory">--</span>
+                    </div>
+                    <div class="device-item card">
+                      <span class="device-label label-caps" data-i18n="device.activated">Activated</span>
+                      <span class="device-value" id="device-activated">--</span>
+                    </div>
+                  </div>
+
                   <div class="battery-shell">
                     <div class="battery-fill" id="battery-fill">
                       <span class="battery-percent" id="battery-percent">--%</span>
@@ -92,20 +111,20 @@
                   </div>
 
                   <div class="battery-meta">
-                    <div class="detail-row">
-                      <span class="detail-label" data-i18n="label.charge">Charge</span>
+                    <div class="detail-row card">
+                      <span class="detail-label label-caps" data-i18n="label.charge">Charge</span>
                       <span class="detail-value" id="charge-percent-display">--</span>
                     </div>
-                    <div class="detail-row">
-                      <span class="detail-label" data-i18n="label.state">State</span>
+                    <div class="detail-row card">
+                      <span class="detail-label label-caps" data-i18n="label.state">State</span>
                       <span class="detail-value" id="charging-state-display">Unknown</span>
                     </div>
-                    <div class="detail-row">
-                      <span class="detail-label" data-i18n="label.adapter">Adapter</span>
+                    <div class="detail-row card">
+                      <span class="detail-label label-caps" data-i18n="label.adapter">Adapter</span>
                       <span class="detail-value" id="adapter-state-display">Unknown</span>
                     </div>
-                    <div class="detail-row">
-                      <span class="detail-label" data-i18n="label.connection">Connection</span>
+                    <div class="detail-row card">
+                      <span class="detail-label label-caps" data-i18n="label.connection">Connection</span>
                       <span class="detail-value" id="connection-status-display">Disconnected</span>
                     </div>
                   </div>
@@ -115,28 +134,28 @@
                   <div class="compact-section-label" data-i18n="section.health_snapshot">Health</div>
 
                   <div class="health-compact-grid">
-                    <div class="health-item health-item-compact">
+                    <div class="card health-item health-item-compact">
                       <span class="health-value" id="health-cycles">--</span>
                       <span class="health-label" data-i18n="health.cycle_count">Cycle Count</span>
                     </div>
-                    <div class="health-item health-item-compact">
+                    <div class="card health-item health-item-compact">
                       <span class="health-value" id="health-percent">--%</span>
                       <span class="health-label" data-i18n="health.battery_life">Battery Life</span>
                     </div>
                   </div>
 
                   <div class="capacity-strip">
-                    <div class="capacity-item">
+                    <div class="capacity-item card">
                       <span class="capacity-value" id="cap-design">--</span>
-                      <span class="capacity-label" data-i18n="health.design_capacity">Design Capacity</span>
+                      <span class="capacity-label label-caps" data-i18n="health.design_capacity">Design Capacity</span>
                     </div>
-                    <div class="capacity-item">
+                    <div class="capacity-item card">
                       <span class="capacity-value" id="cap-max">--</span>
-                      <span class="capacity-label" data-i18n="health.actual_capacity">Actual Capacity</span>
+                      <span class="capacity-label label-caps" data-i18n="health.actual_capacity">Actual Capacity</span>
                     </div>
-                    <div class="capacity-item">
+                    <div class="capacity-item card">
                       <span class="capacity-value" id="cap-current">--</span>
-                      <span class="capacity-label" data-i18n="health.current_capacity">Current Capacity</span>
+                      <span class="capacity-label label-caps" data-i18n="health.current_capacity">Current Capacity</span>
                     </div>
                   </div>
                 </div>
@@ -156,16 +175,16 @@
               </div>
 
               <div class="service-grid">
-                <div class="detail-row">
-                  <span class="detail-label" data-i18n="service.installed">Installed</span>
+                <div class="detail-row card">
+                  <span class="detail-label label-caps" data-i18n="service.installed">Installed</span>
                   <span class="detail-value" id="service-installed-value">No</span>
                 </div>
-                <div class="detail-row">
-                  <span class="detail-label" data-i18n="service.running">Running</span>
+                <div class="detail-row card">
+                  <span class="detail-label label-caps" data-i18n="service.running">Running</span>
                   <span class="detail-value" id="service-running-value">No</span>
                 </div>
-                <div class="detail-row">
-                  <span class="detail-label" data-i18n="service.control">Control</span>
+                <div class="detail-row card">
+                  <span class="detail-label label-caps" data-i18n="service.control">Control</span>
                   <span class="detail-value" id="service-control-value">Unavailable</span>
                 </div>
               </div>
@@ -189,16 +208,16 @@
 
               <div class="service-support">
                 <div class="compact-section-label" data-i18n="section.power_input">Power Input</div>
-                <div class="charger-main service-power-card">
+                <div class="charger-main card service-power-card">
                   <span class="charger-name" id="charger-name">--</span>
                   <span class="charger-wattage" id="charger-wattage">--W</span>
                 </div>
                 <div class="charger-details service-power-details">
-                  <div class="charger-detail">
+                  <div class="charger-detail card">
                     <span class="charger-detail-label" data-i18n="charger.voltage">Output Voltage</span>
                     <span class="charger-detail-value" id="charger-voltage">-- mV</span>
                   </div>
-                  <div class="charger-detail">
+                  <div class="charger-detail card">
                     <span class="charger-detail-label" data-i18n="charger.current">Output Current</span>
                     <span class="charger-detail-value" id="charger-current">-- mA</span>
                   </div>
@@ -216,7 +235,7 @@
                 </div>
               </div>
 
-              <div class="actions-grid actions-grid-main">
+              <div class="actions-grid">
                 <button class="action-btn action-primary" id="btn-charge-full">
                   <span class="btn-icon">&#9889;</span>
                   <span data-i18n="btn.charge_full">Charge to Full</span>
@@ -304,7 +323,7 @@
               </div>
 
               <div class="settings-list">
-                <div class="setting-row">
+                <div class="setting-row card">
                   <div class="setting-info">
                     <span class="setting-name" data-i18n="setting.adapter_sleep">Disable sleep when adapter disabled</span>
                     <span class="setting-desc" data-i18n="setting.adapter_sleep_desc">Prevents the system from sleeping when the power adapter is disabled</span>
@@ -315,7 +334,7 @@
                   </label>
                 </div>
 
-                <div class="setting-row">
+                <div class="setting-row card">
                   <div class="setting-info">
                     <span class="setting-name" data-i18n="setting.magsafe_sync">Sync MagSafe LED</span>
                     <span class="setting-desc" data-i18n="setting.magsafe_sync_desc">Synchronize the MagSafe LED indicator with charging state</span>
@@ -345,7 +364,7 @@
                   <span data-i18n="btn.refresh_logs">Refresh Logs</span>
                 </button>
               </div>
-              <pre class="service-log" id="service-log">--</pre>
+              <pre class="service-log card" id="service-log">--</pre>
             </div>
           </details>
         </main>
