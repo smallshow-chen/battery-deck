@@ -64,6 +64,8 @@ const TRANSLATIONS = {
     "btn.start_service": "Start Service",
     "btn.stop_service": "Stop Service",
     "btn.refresh_logs": "Refresh Logs",
+    "btn.refresh_dashboard": "Refresh",
+    "btn.toggle_theme": "Toggle theme",
 
     // Settings card
     "section.settings": "Settings",
@@ -183,6 +185,8 @@ const TRANSLATIONS = {
     "btn.start_service": "启动服务",
     "btn.stop_service": "停止服务",
     "btn.refresh_logs": "刷新日志",
+    "btn.refresh_dashboard": "刷新",
+    "btn.toggle_theme": "切换主题",
 
     "section.settings": "设置",
     "section.diagnostics": "诊断",
@@ -290,6 +294,13 @@ function applyLocaleToDom() {
     const key = el.getAttribute("data-i18n");
     if (key && _dict[key] !== undefined) {
       el.textContent = _dict[key];
+    }
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-title");
+    if (key && _dict[key] !== undefined) {
+      el.setAttribute("title", _dict[key]);
+      el.setAttribute("aria-label", _dict[key]);
     }
   });
 }

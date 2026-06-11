@@ -43,6 +43,9 @@ let lastSnapshotPollAt = 0;
 let lastRealtimePollAt = 0;
 let scrollContainers = [];
 let windowVisible = true;
+let themeMode = "light";
+
+const THEME_STORAGE_KEY = "battery-toolkit-theme";
 
 // ---- DOM References ----
 const dom = {};
@@ -59,6 +62,8 @@ function cacheDom() {
 
   dom.badgeEnabled = document.getElementById("badge-enabled");
   dom.badgeMode = document.getElementById("badge-mode");
+  dom.btnRefreshDashboard = document.getElementById("btn-refresh-dashboard");
+  dom.btnToggleTheme = document.getElementById("btn-toggle-theme");
   dom.serviceIndicatorDot = document.getElementById("service-indicator-dot");
   dom.serviceStatusLabel = document.getElementById("service-status-label");
   dom.serviceInstalledValue = document.getElementById("service-installed-value");
@@ -78,6 +83,7 @@ function cacheDom() {
   dom.batteryShell = document.getElementById("battery-shell");
   dom.batteryFill = document.getElementById("battery-fill");
   dom.batteryPercent = document.getElementById("battery-percent");
+  dom.batteryLevelCard = document.querySelector(".battery-level-card");
   dom.chargePercentDisplay = document.getElementById("charge-percent-display");
   dom.chargingStateDisplay = document.getElementById("charging-state-display");
   dom.adapterStateDisplay = document.getElementById("adapter-state-display");
@@ -130,6 +136,7 @@ function cacheDom() {
 // ---- Initialization ----
 window.addEventListener("DOMContentLoaded", async () => {
   cacheDom();
+  initializeTheme();
   bindEvents();
   updateSettingsUI();
   await initialize();
@@ -247,6 +254,26 @@ async function refreshVisibleState() {
   await loadDashboardSnapshot();
 }
 
+function initializeTheme() {
+  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+  themeMode = savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
+  applyTheme();
+}
+
+function applyTheme() {
+  document.documentElement.dataset.theme = themeMode;
+  if (dom.btnToggleTheme) {
+    dom.btnToggleTheme.classList.toggle("is-dark", themeMode === "dark");
+  }
+}
+
+function toggleTheme() {
+  themeMode = themeMode === "dark" ? "light" : "dark";
+  localStorage.setItem(THEME_STORAGE_KEY, themeMode);
+  applyTheme();
+}
+
 async function applySettings() {
   try {
     const minCharge = parseInt(dom.minChargeSlider.value, 10);
@@ -305,6 +332,8 @@ function bindEvents() {
   dom.btnStartService.addEventListener("click", onStartService);
   dom.btnStopService.addEventListener("click", onStopService);
   dom.btnRefreshLogs.addEventListener("click", onRefreshLogs);
+  dom.btnRefreshDashboard.addEventListener("click", onRefreshDashboard);
+  dom.btnToggleTheme.addEventListener("click", toggleTheme);
 
   // Setting toggles
   dom.toggleAdapterSleep.addEventListener("change", onSettingsChange);
@@ -467,6 +496,19 @@ async function onRefreshLogs() {
   }
 }
 
+async function onRefreshDashboard() {
+  try {
+    dom.btnRefreshDashboard.disabled = true;
+    dom.btnRefreshDashboard.classList.add("is-refreshing");
+    await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
+  } catch (err) {
+    showError("Failed: " + formatError(err));
+  } finally {
+    dom.btnRefreshDashboard.classList.remove("is-refreshing");
+    dom.btnRefreshDashboard.disabled = false;
+  }
+}
+
 function onUserScroll() {
   isUserScrolling = true;
   if (scrollResumeTimer) {
@@ -591,12 +633,25 @@ function updateBatteryDisplay() {
     state.isPlugged &&
     !state.powerDisabled &&
     !state.chargingDisabled;
+  const isStandby =
+    state.isPlugged &&
+    !isActivelyCharging &&
+    !state.powerDisabled &&
+    !state.chargingDisabled;
 
-  // Battery fill width
-  dom.batteryFill.style.width = pct + "%";
+  // Battery fill level
+  dom.batteryShell.style.setProperty("--fill-pct", pct + "%");
   dom.batteryPercent.textContent = pct + "%";
   dom.batteryFill.classList.toggle("charging", isActivelyCharging);
   dom.batteryShell.classList.toggle("charging", isActivelyCharging);
+  dom.batteryFill.classList.toggle("standby", isStandby);
+  dom.batteryShell.classList.toggle("standby", isStandby);
+  dom.batteryShell.classList.toggle("disabled", !!state.powerDisabled || !!state.chargingDisabled);
+  if (dom.batteryLevelCard) {
+    dom.batteryLevelCard.classList.toggle("charging", isActivelyCharging);
+    dom.batteryLevelCard.classList.toggle("standby", isStandby);
+    dom.batteryLevelCard.classList.toggle("disabled", !!state.powerDisabled || !!state.chargingDisabled);
+  }
 
   // Battery color
   dom.batteryFill.classList.remove(
@@ -605,14 +660,26 @@ function updateBatteryDisplay() {
     "charge-good",
     "charge-full"
   );
+  if (dom.batteryLevelCard) {
+    dom.batteryLevelCard.classList.remove(
+      "charge-low",
+      "charge-mid",
+      "charge-good",
+      "charge-full"
+    );
+  }
   if (pct <= 20) {
     dom.batteryFill.classList.add("charge-low");
+    dom.batteryLevelCard?.classList.add("charge-low");
   } else if (pct <= 50) {
     dom.batteryFill.classList.add("charge-mid");
+    dom.batteryLevelCard?.classList.add("charge-mid");
   } else if (pct < 95) {
     dom.batteryFill.classList.add("charge-good");
+    dom.batteryLevelCard?.classList.add("charge-good");
   } else {
     dom.batteryFill.classList.add("charge-full");
+    dom.batteryLevelCard?.classList.add("charge-full");
   }
 
   // Details

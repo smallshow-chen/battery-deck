@@ -38,6 +38,31 @@ const MENU_START_SERVICE: &str = "tray.start_service";
 const MENU_STOP_SERVICE: &str = "tray.stop_service";
 const MENU_QUIT: &str = "tray.quit";
 
+#[cfg(target_os = "macos")]
+fn restore_app_icon(app: &AppHandle) -> Result<(), String> {
+    use objc2::{AllocAnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSData;
+
+    let icon_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.png");
+    let icon_bytes = std::fs::read(&icon_path).map_err(|e| e.to_string())?;
+
+    app.run_on_main_thread(move || {
+        let mtm = unsafe { MainThreadMarker::new_unchecked() };
+        let ns_app = NSApplication::sharedApplication(mtm);
+        let data = NSData::with_bytes(&icon_bytes);
+        if let Some(app_icon) = NSImage::initWithData(NSImage::alloc(), &data) {
+            unsafe { ns_app.setApplicationIconImage(Some(&app_icon)) };
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn restore_app_icon(_: &AppHandle) -> Result<(), String> {
+    Ok(())
+}
+
 struct AppCache(BatteryCache);
 
 struct AppState {
@@ -174,15 +199,10 @@ fn bilingual_label(zh: &str, en: &str) -> String {
     format!("{zh} / {en}")
 }
 
-fn set_app_activation_policy(app: &AppHandle, visible: bool) -> Result<(), String> {
+fn set_app_activation_policy(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        let policy = if visible {
-            tauri::ActivationPolicy::Regular
-        } else {
-            tauri::ActivationPolicy::Accessory
-        };
-        app.set_activation_policy(policy)
+        app.set_activation_policy(tauri::ActivationPolicy::Regular)
             .map_err(|e| e.to_string())?;
     }
 
@@ -190,9 +210,15 @@ fn set_app_activation_policy(app: &AppHandle, visible: bool) -> Result<(), Strin
 }
 
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
-    set_app_activation_policy(app, true)?;
+    set_app_activation_policy(app)?;
+    restore_app_icon(app)?;
+    #[cfg(target_os = "macos")]
+    app.set_dock_visibility(true).map_err(|e| e.to_string())?;
 
     let window = main_window(app)?;
+    if let Some(icon) = app.default_window_icon().cloned() {
+        let _ = window.set_icon(icon);
+    }
     window.show().map_err(|e| e.to_string())?;
     let _ = window.set_focus();
 
@@ -209,7 +235,8 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
 fn hide_main_window(app: &AppHandle) -> Result<(), String> {
     let window = main_window(app)?;
     window.hide().map_err(|e| e.to_string())?;
-    set_app_activation_policy(app, false)?;
+    #[cfg(target_os = "macos")]
+    app.set_dock_visibility(false).map_err(|e| e.to_string())?;
 
     let was_visible = app
         .state::<AppState>()

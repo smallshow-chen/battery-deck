@@ -152,8 +152,6 @@ struct CachedChargerProfile {
 struct BatteryCacheInner {
     battery_ioreg_at: Option<Instant>,
     battery_ioreg_data: Option<String>,
-    power_ioreg_at: Option<Instant>,
-    power_ioreg_data: Option<String>,
     pmset_at: Option<Instant>,
     pmset_data: Option<String>,
     system_info: Option<SystemInfo>,
@@ -176,8 +174,6 @@ impl BatteryCache {
                 inner: Mutex::new(BatteryCacheInner {
                     battery_ioreg_at: None,
                     battery_ioreg_data: None,
-                    power_ioreg_at: None,
-                    power_ioreg_data: None,
                     pmset_at: None,
                     pmset_data: None,
                     system_info: None,
@@ -280,6 +276,50 @@ fn parse_ioreg_number<T: std::str::FromStr>(stdout: &str, key: &str) -> Option<T
 }
 
 #[cfg(target_os = "macos")]
+fn parse_ioreg_embedded_number<T: std::str::FromStr>(stdout: &str, key: &str) -> Option<T> {
+    let needles = [format!("\"{key}\"="), format!("\"{key}\" = "), format!("{key}=")];
+
+    for line in stdout.lines() {
+        for needle in &needles {
+            if let Some(start) = line.find(needle) {
+                let rest = &line[start + needle.len()..];
+                let value = rest
+                    .trim_start()
+                    .trim_start_matches('"')
+                    .split(|c: char| c == ',' || c == '}' || c == ')' || c == '"' || c.is_whitespace())
+                    .next()
+                    .unwrap_or("");
+
+                if let Ok(parsed) = value.parse::<T>() {
+                    return Some(parsed);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn parse_ioreg_embedded_string(stdout: &str, key: &str) -> Option<String> {
+    let needles = [format!("\"{key}\"=\""), format!("\"{key}\" = \""), format!("{key}=\"")];
+
+    for line in stdout.lines() {
+        for needle in &needles {
+            if let Some(start) = line.find(needle) {
+                let rest = &line[start + needle.len()..];
+                let value = rest.split('"').next().unwrap_or("").trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
 fn parse_ioreg_bool(stdout: &str, key: &str) -> bool {
     let needle = format!("\"{key}\" = ");
     for line in stdout.lines() {
@@ -354,12 +394,6 @@ fn probe_battery_ioreg() -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn probe_power_ioreg() -> Option<String> {
-    let output = Command::new("ioreg").args(["-l", "-w0"]).output().ok()?;
-    String::from_utf8(output.stdout).ok()
-}
-
-#[cfg(target_os = "macos")]
 fn probe_pmset() -> Option<String> {
     let output = Command::new("pmset").args(["-g", "batt"]).output().ok()?;
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
@@ -388,21 +422,6 @@ fn cached_battery_ioreg(cache: &BatteryCache) -> Option<String> {
     let data = probe_battery_ioreg()?;
     inner.battery_ioreg_at = Some(Instant::now());
     inner.battery_ioreg_data = Some(data.clone());
-    Some(data)
-}
-
-#[cfg(target_os = "macos")]
-fn cached_power_ioreg(cache: &BatteryCache) -> Option<String> {
-    let mut inner = cache.inner.lock().ok()?;
-    if let (Some(at), Some(data)) = (inner.power_ioreg_at, inner.power_ioreg_data.as_ref()) {
-        if at.elapsed() < BATTERY_DATA_TTL {
-            return Some(data.clone());
-        }
-    }
-
-    let data = probe_power_ioreg()?;
-    inner.power_ioreg_at = Some(Instant::now());
-    inner.power_ioreg_data = Some(data.clone());
     Some(data)
 }
 
@@ -469,9 +488,17 @@ fn build_health(stdout: &str, percent: u8) -> Option<BatteryHealth> {
 
 #[cfg(target_os = "macos")]
 fn build_charger_info(ioreg_stdout: &str, name: String, wattage: u32) -> ChargerInfo {
-    let charging_voltage = parse_ioreg_number::<u32>(ioreg_stdout, "ChargingVoltage").unwrap_or(0);
-    let charging_current = parse_ioreg_number::<u32>(ioreg_stdout, "ChargingCurrent").unwrap_or(0);
+    let charging_voltage = parse_ioreg_number::<u32>(ioreg_stdout, "ChargingVoltage")
+        .or_else(|| parse_ioreg_embedded_number::<u32>(ioreg_stdout, "ChargingVoltage"))
+        .or_else(|| parse_ioreg_embedded_number::<u32>(ioreg_stdout, "AdapterVoltage"))
+        .unwrap_or(0);
+    let charging_current = parse_ioreg_number::<u32>(ioreg_stdout, "ChargingCurrent")
+        .or_else(|| parse_ioreg_embedded_number::<u32>(ioreg_stdout, "ChargingCurrent"))
+        .or_else(|| parse_ioreg_embedded_number::<u32>(ioreg_stdout, "Current"))
+        .unwrap_or(0);
     let external_connected = parse_ioreg_bool(ioreg_stdout, "ExternalConnected");
+    let adapter_name = parse_ioreg_embedded_string(ioreg_stdout, "Name");
+    let adapter_wattage = parse_ioreg_embedded_number::<u32>(ioreg_stdout, "Watts").unwrap_or(wattage);
 
     if !external_connected {
         return ChargerInfo {
@@ -484,12 +511,12 @@ fn build_charger_info(ioreg_stdout: &str, name: String, wattage: u32) -> Charger
     }
 
     ChargerInfo {
-        name: if name.is_empty() {
+        name: adapter_name.unwrap_or_else(|| if name.is_empty() {
             "USB-C Power Adapter".to_string()
         } else {
             name
-        },
-        wattage,
+        }),
+        wattage: adapter_wattage,
         connected: true,
         charging_voltage,
         charging_current,
@@ -597,8 +624,8 @@ pub fn get_battery_health_cached(_cache: &BatteryCache) -> Option<BatteryHealth>
 
 #[cfg(target_os = "macos")]
 pub fn get_charger_info_cached(cache: &BatteryCache) -> Option<ChargerInfo> {
-    let power_ioreg = cached_power_ioreg(cache)?;
-    let external_connected = parse_ioreg_bool(&power_ioreg, "ExternalConnected");
+    let battery_ioreg = cached_battery_ioreg(cache)?;
+    let external_connected = parse_ioreg_bool(&battery_ioreg, "ExternalConnected");
 
     let cached_profile = cache
         .inner
@@ -631,7 +658,7 @@ pub fn get_charger_info_cached(cache: &BatteryCache) -> Option<ChargerInfo> {
             .unwrap_or_else(|| (String::new(), 0))
     };
 
-    Some(build_charger_info(&power_ioreg, name, wattage))
+    Some(build_charger_info(&battery_ioreg, name, wattage))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -658,4 +685,41 @@ pub fn get_system_info_cached(cache: &BatteryCache) -> Option<SystemInfo> {
 #[cfg(not(target_os = "macos"))]
 pub fn get_system_info_cached(_cache: &BatteryCache) -> Option<SystemInfo> {
     None
+}
+
+#[cfg(test)]
+#[cfg(target_os = "macos")]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn charger_info_reads_nested_adapter_details() {
+        let ioreg = r#"
+            "ExternalConnected" = Yes
+            "AdapterDetails" = {"Watts"=30,"Current"=1490,"Name"="30W USB-C Power Adapter","AdapterVoltage"=20000}
+            "ChargerData" = {"ChargingVoltage"=4402,"ChargingCurrent"=0}
+        "#;
+
+        let info = build_charger_info(ioreg, String::new(), 0);
+
+        assert!(info.connected);
+        assert_eq!(info.name, "30W USB-C Power Adapter");
+        assert_eq!(info.wattage, 30);
+        assert_eq!(info.charging_voltage, 4402);
+        assert_eq!(info.charging_current, 0);
+    }
+
+    #[test]
+    fn charger_info_falls_back_to_adapter_contract_values() {
+        let ioreg = r#"
+            "ExternalConnected" = Yes
+            "AdapterDetails" = {"Watts"=67,"Current"=3350,"Name"="USB-C Power Adapter","AdapterVoltage"=20000}
+        "#;
+
+        let info = build_charger_info(ioreg, String::new(), 0);
+
+        assert_eq!(info.wattage, 67);
+        assert_eq!(info.charging_voltage, 20000);
+        assert_eq!(info.charging_current, 3350);
+    }
 }

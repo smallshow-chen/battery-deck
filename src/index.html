@@ -28,9 +28,12 @@
       </div>
 
       <header class="titlebar window-drag">
-        <div class="titlebar-copy">
-          <h1 class="app-title" data-i18n="app.title">Battery Toolkit</h1>
-          <p class="app-subtitle" data-i18n="app.subtitle">Battery control for Apple Silicon Macs</p>
+        <div class="titlebar-brand">
+          <img class="app-logo" src="assets/app-logo.png" alt="" aria-hidden="true" />
+          <div class="titlebar-copy">
+            <h1 class="app-title" data-i18n="app.title">Battery Toolkit</h1>
+            <p class="app-subtitle" data-i18n="app.subtitle">Battery control for Apple Silicon Macs</p>
+          </div>
         </div>
         <div class="titlebar-metrics">
           <div class="title-metric-pill">
@@ -53,6 +56,15 @@
         <div class="status-badges">
           <span class="badge" id="badge-enabled">Enabled</span>
           <span class="badge" id="badge-mode">Standard</span>
+          <button class="chrome-btn" id="btn-refresh-dashboard" type="button" data-i18n-title="btn.refresh_dashboard" title="Refresh">
+            <span class="chrome-btn-icon" aria-hidden="true">&#8635;</span>
+            <span class="sr-only" data-i18n="btn.refresh_dashboard">Refresh</span>
+          </button>
+          <button class="chrome-btn" id="btn-toggle-theme" type="button" data-i18n-title="btn.toggle_theme" title="Toggle theme">
+            <span class="theme-icon theme-icon-light" aria-hidden="true">&#9788;</span>
+            <span class="theme-icon theme-icon-dark" aria-hidden="true">&#9790;</span>
+            <span class="sr-only" data-i18n="btn.toggle_theme">Toggle theme</span>
+          </button>
         </div>
       </header>
 
@@ -104,59 +116,73 @@
                     </div>
                   </div>
 
-                  <div class="battery-shell" id="battery-shell">
-                    <span class="battery-charge-icon" aria-hidden="true">&#9889;</span>
-                    <div class="battery-fill" id="battery-fill">
-                      <span class="battery-percent" id="battery-percent">--%</span>
+                  <div class="battery-summary-grid">
+                    <div class="battery-level-card card">
+                      <div class="battery-level-copy">
+                        <span class="battery-card-label label-caps" data-i18n="label.charge">Charge</span>
+                        <div class="battery-percent-large" id="battery-percent">--%</div>
+                      </div>
+                      <div class="battery-shell" id="battery-shell" aria-hidden="true">
+                        <div class="battery-fill" id="battery-fill">
+                          <span class="battery-liquid-shine"></span>
+                        </div>
+                        <span class="battery-charge-icon">
+                          <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+                            <path d="M35 5 14 35h13l-5 24 28-34H37l-2-20Z" />
+                          </svg>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="battery-meta">
+                      <div class="detail-row card detail-row-wide">
+                        <span class="detail-label label-caps" data-i18n="label.state">State</span>
+                        <span class="detail-value" id="charging-state-display">Unknown</span>
+                      </div>
+                      <div class="detail-row card">
+                        <span class="detail-label label-caps" data-i18n="label.adapter">Adapter</span>
+                        <span class="detail-value" id="adapter-state-display">Unknown</span>
+                      </div>
+                      <div class="detail-row card">
+                        <span class="detail-label label-caps" data-i18n="label.connection">Connection</span>
+                        <span class="detail-value" id="connection-status-display">Disconnected</span>
+                      </div>
+                      <div class="detail-row card sr-only">
+                        <span class="detail-label label-caps" data-i18n="label.charge">Charge</span>
+                        <span class="detail-value" id="charge-percent-display">--</span>
+                      </div>
                     </div>
                   </div>
 
-                  <div class="battery-meta">
-                    <div class="detail-row card">
-                      <span class="detail-label label-caps" data-i18n="label.charge">Charge</span>
-                      <span class="detail-value" id="charge-percent-display">--</span>
-                    </div>
-                    <div class="detail-row card">
-                      <span class="detail-label label-caps" data-i18n="label.state">State</span>
-                      <span class="detail-value" id="charging-state-display">Unknown</span>
-                    </div>
-                    <div class="detail-row card">
-                      <span class="detail-label label-caps" data-i18n="label.adapter">Adapter</span>
-                      <span class="detail-value" id="adapter-state-display">Unknown</span>
-                    </div>
-                    <div class="detail-row card">
-                      <span class="detail-label label-caps" data-i18n="label.connection">Connection</span>
-                      <span class="detail-value" id="connection-status-display">Disconnected</span>
-                    </div>
-                  </div>
-                </div>
+                  <div class="overview-health">
+                    <div class="compact-section-label" data-i18n="section.health_snapshot">Health</div>
 
-                <div class="overview-health">
-                  <div class="compact-section-label" data-i18n="section.health_snapshot">Health</div>
-
-                  <div class="health-compact-grid">
-                    <div class="card health-item health-item-compact">
-                      <span class="health-value" id="health-cycles">--</span>
-                      <span class="health-label" data-i18n="health.cycle_count">Cycle Count</span>
-                    </div>
-                    <div class="card health-item health-item-compact">
-                      <span class="health-value" id="health-percent">--%</span>
-                      <span class="health-label" data-i18n="health.battery_life">Battery Life</span>
-                    </div>
-                  </div>
-
-                  <div class="capacity-strip">
-                    <div class="capacity-item card">
-                      <span class="capacity-value" id="cap-design">--</span>
-                      <span class="capacity-label label-caps" data-i18n="health.design_capacity">Design Capacity</span>
-                    </div>
-                    <div class="capacity-item card">
-                      <span class="capacity-value" id="cap-max">--</span>
-                      <span class="capacity-label label-caps" data-i18n="health.actual_capacity">Actual Capacity</span>
-                    </div>
-                    <div class="capacity-item card">
-                      <span class="capacity-value" id="cap-current">--</span>
-                      <span class="capacity-label label-caps" data-i18n="health.current_capacity">Current Capacity</span>
+                    <div class="capacity-strip">
+                      <div class="capacity-item card">
+                        <span class="capacity-icon" aria-hidden="true">&#9851;</span>
+                        <span class="capacity-label label-caps" data-i18n="health.cycle_count">Cycle Count</span>
+                        <span class="capacity-value" id="health-cycles">--</span>
+                      </div>
+                      <div class="capacity-item card">
+                        <span class="capacity-icon" aria-hidden="true">&#9201;</span>
+                        <span class="capacity-label label-caps" data-i18n="health.battery_life">Battery Life</span>
+                        <span class="capacity-value" id="health-percent">--%</span>
+                      </div>
+                      <div class="capacity-item card">
+                        <span class="capacity-icon" aria-hidden="true">&#128267;</span>
+                        <span class="capacity-label label-caps" data-i18n="health.design_capacity">Design Capacity</span>
+                        <span class="capacity-value" id="cap-design">--</span>
+                      </div>
+                      <div class="capacity-item card">
+                        <span class="capacity-icon" aria-hidden="true">&#9878;</span>
+                        <span class="capacity-label label-caps" data-i18n="health.actual_capacity">Actual Capacity</span>
+                        <span class="capacity-value" id="cap-max">--</span>
+                      </div>
+                      <div class="capacity-item card highlight-capacity">
+                        <span class="capacity-icon" aria-hidden="true">&#9676;</span>
+                        <span class="capacity-label label-caps" data-i18n="health.current_capacity">Current Capacity</span>
+                        <span class="capacity-value" id="cap-current">--</span>
+                      </div>
                     </div>
                   </div>
                 </div>
