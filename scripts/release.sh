@@ -95,6 +95,21 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  cat >&2 <<'EOF'
+TAURI_SIGNING_PRIVATE_KEY is not set.
+
+This release flow calls `scripts/package-release.sh`, which builds Tauri updater artifacts and requires the updater signing private key.
+
+Set these environment variables before running release:
+  export TAURI_SIGNING_PRIVATE_KEY="$(cat /path/to/tauri.key)"
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"  # only if needed
+
+If you are releasing from CI, inject the same values from repository secrets.
+EOF
+  exit 1
+fi
+
 echo "[1/6] Updating version numbers to $VERSION..."
 perl -0pi -e 's/"version":\s*"[^"]+"/"version": "'"$VERSION"'"/' "$PACKAGE_JSON"
 perl -0pi -e 's/^version = "[^"]+"/version = "'"$VERSION"'"/m' "$CARGO_TOML"

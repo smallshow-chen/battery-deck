@@ -144,12 +144,17 @@ Create release artifacts:
 ```
 
 Artifacts are written to `release-artifacts/`.
+If `TAURI_SIGNING_PRIVATE_KEY` is set, the script also generates updater artifacts and `latest.json`. Without that key, it only builds the local `.app`, `.zip`, and `.dmg`.
 
 Create and publish a full GitHub release:
 
 ```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(cat /path/to/tauri.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password" # if the key uses one
 ./scripts/release.sh 0.0.2
 ```
+
+The updater public key belongs in `src-tauri/tauri.conf.json`. The matching private key must never be committed; keep it in your shell environment or CI secrets.
 
 ## Installation Notes
 
