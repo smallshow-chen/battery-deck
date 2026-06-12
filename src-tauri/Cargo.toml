@@ -1,13 +1,13 @@
 [package]
-name = "battery-toolkit"
-version = "1.0.0"
+name = "battery-deck"
+version = "0.0.1"
 description = "Battery charge management for Apple Silicon Macs"
 authors = ["smallshow"]
 edition = "2021"
-default-run = "battery-toolkit"
+default-run = "battery-deck"
 
 [lib]
-name = "battery_toolkit_lib"
+name = "battery_deck_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

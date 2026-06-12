@@ -129,6 +129,13 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
 .titlebar-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .app-title { font-size: 22px; line-height: 1.08; font-weight: 700; }
 .app-subtitle { font-size: 11.5px; color: var(--text-secondary); }
+.app-version-badge {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary, rgba(0,0,0,0.35));
+  margin-left: 6px;
+  vertical-align: baseline;
+}
 
 .titlebar-metrics {
   display: flex;
@@ -1310,11 +1317,11 @@ body::before { display: none; }
   font-weight: 900;
   line-height: 1;
   box-shadow: none;
-  opacity: 0;
+  opacity: 1;
   text-shadow:
     0 1px 0 rgba(255, 247, 196, 0.86),
     0 3px 8px rgba(255, 207, 27, 0.26);
-  transform: translateX(-50%) translateY(4px) scale(0.92);
+  transform: translateX(-50%);
   transition:
     opacity 180ms ease,
     transform 220ms ease;

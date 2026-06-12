@@ -53,7 +53,7 @@ fi
 
 echo "[2/6] Building macOS app bundle..."
 cd "$ROOT_DIR"
-./node_modules/.bin/tauri build --bundles app -- --bin battery-toolkit
+./node_modules/.bin/tauri build --bundles app -- --bin battery-deck
 
 if [[ ! -d "$APP_PATH" ]]; then
   echo "Expected app bundle not found: $APP_PATH" >&2
@@ -76,7 +76,7 @@ echo "[5/6] Creating zip archive..."
 ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$ZIP_PATH"
 
 echo "[6/6] Creating dmg archive..."
-STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/battery-toolkit-release.XXXXXX")"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/battery-deck-release.XXXXXX")"
 ditto "$APP_PATH" "$STAGING_DIR/$APP_NAME"
 ln -s /Applications "$STAGING_DIR/Applications"
 hdiutil create \

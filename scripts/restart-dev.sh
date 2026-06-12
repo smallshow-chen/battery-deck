@@ -37,8 +37,8 @@ done
 cd "$TAURI_DIR"
 
 echo "[1/4] Stopping old dev processes..."
-pkill -f 'target/debug/battery-toolkit' >/dev/null 2>&1 || true
-pkill -f 'cargo tauri dev -- --bin battery-toolkit' >/dev/null 2>&1 || true
+pkill -f 'target/debug/battery-deck' >/dev/null 2>&1 || true
+pkill -f 'cargo tauri dev -- --bin battery-deck' >/dev/null 2>&1 || true
 
 echo "[2/4] Building battery-helper..."
 cargo build --bin battery-helper
@@ -74,4 +74,4 @@ if [[ "$reinstall_root_helper" -eq 1 ]]; then
 fi
 
 echo "[4/4] Starting Tauri dev app..."
-exec cargo tauri dev -- --bin battery-toolkit
+exec cargo tauri dev -- --bin battery-deck

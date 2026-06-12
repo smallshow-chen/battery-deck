@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
 struct SharedState {
@@ -172,7 +172,70 @@ fn log_line(message: &str) {
         return;
     }
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-        let _ = writeln!(file, "{}", message);
+        let _ = writeln!(file, "[{}] {}", log_timestamp(), message);
+    }
+}
+
+fn log_timestamp() -> String {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => {
+            let seconds = duration.as_secs() as libc::time_t;
+            let millis = duration.subsec_millis();
+            let mut local_time = libc::tm {
+                tm_sec: 0,
+                tm_min: 0,
+                tm_hour: 0,
+                tm_mday: 0,
+                tm_mon: 0,
+                tm_year: 0,
+                tm_wday: 0,
+                tm_yday: 0,
+                tm_isdst: 0,
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                ))]
+                tm_gmtoff: 0,
+                #[cfg(any(
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                ))]
+                tm_zone: std::ptr::null_mut(),
+            };
+
+            // SAFETY: `localtime_r` writes to the provided `tm` buffer and we pass valid pointers.
+            let converted = unsafe { libc::localtime_r(&seconds, &mut local_time) };
+            if converted.is_null() {
+                return format!("{}.{:03}", duration.as_secs(), millis);
+            }
+
+            format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+                local_time.tm_year + 1900,
+                local_time.tm_mon + 1,
+                local_time.tm_mday,
+                local_time.tm_hour,
+                local_time.tm_min,
+                local_time.tm_sec,
+                millis
+            )
+        }
+        Err(_) => "1970-01-01 00:00:00.000".to_string(),
+    }
+}
+
+fn log_command(command: &str, detail: Option<&str>) {
+    match detail {
+        Some(detail) if !detail.is_empty() => log_line(&format!("[command] {command}: {detail}")),
+        _ => log_line(&format!("[command] {command}")),
     }
 }
 
@@ -242,6 +305,7 @@ fn enable_charging(shared: &SharedState) -> Result<(), String> {
         state.charging_disabled = false;
         save_runtime(&state.clone())?;
     }
+    log_line("charging enabled");
     clear_error(shared);
     Ok(())
 }
@@ -252,6 +316,7 @@ fn disable_charging(shared: &SharedState) -> Result<(), String> {
         state.charging_disabled = true;
         save_runtime(&state.clone())?;
     }
+    log_line("charging disabled");
     clear_error(shared);
     Ok(())
 }
@@ -262,6 +327,7 @@ fn enable_adapter(shared: &SharedState) -> Result<(), String> {
         state.power_disabled = false;
         save_runtime(&state.clone())?;
     }
+    log_line("adapter enabled");
     clear_error(shared);
     Ok(())
 }
@@ -272,6 +338,7 @@ fn disable_adapter(shared: &SharedState) -> Result<(), String> {
         state.power_disabled = true;
         save_runtime(&state.clone())?;
     }
+    log_line("adapter disabled");
     clear_error(shared);
     Ok(())
 }
@@ -291,6 +358,13 @@ fn apply_settings(shared: &SharedState, settings: Settings) -> Result<HelperStat
     if snapshot.settings.magsafe_sync {
         set_magsafe_system(shared);
     }
+    log_line(&format!(
+        "settings updated: min={} max={} adapter_sleep={} magsafe_sync={}",
+        snapshot.settings.min_charge,
+        snapshot.settings.max_charge,
+        snapshot.settings.adapter_sleep,
+        snapshot.settings.magsafe_sync
+    ));
     clear_error(shared);
     Ok(snapshot)
 }
@@ -310,6 +384,7 @@ fn update_mode(shared: &SharedState, mode: ChargeMode) -> Result<HelperState, St
         state.clone()
     };
     save_runtime(&snapshot)?;
+    log_line(&format!("charge mode set to {:?}", snapshot.mode));
     Ok(snapshot)
 }
 
@@ -349,6 +424,8 @@ fn evaluate(shared: &SharedState) -> Result<(), String> {
 }
 
 fn handle_request(shared: &SharedState, request: Request) -> Response {
+    let command_name = request.command.clone();
+    log_command(&command_name, None);
     let result = match request.command.as_str() {
         "ping" => Ok(json!({"pong": true})),
         "get_status" | "get_state" => current_state(shared).map(|state| json!(state)),
@@ -445,6 +522,35 @@ pub fn helper_logs(lines: usize) -> Result<String, String> {
     let content: Vec<String> = reader.lines().map_while(Result::ok).collect();
     let start = content.len().saturating_sub(lines);
     Ok(content[start..].join("\n"))
+}
+
+pub fn clear_helper_logs() -> Result<(), String> {
+    let path = helper_log_path();
+    ensure_parent(&path)?;
+    match OpenOptions::new().write(true).truncate(true).open(&path) {
+        Ok(_) => Ok(()),
+        Err(primary_error) => {
+            let stdout_path = helper_stdout_log_path();
+            let stderr_path = helper_stderr_log_path();
+
+            let stdout_result = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&stdout_path);
+            let stderr_result = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&stderr_path);
+
+            if stdout_result.is_ok() && stderr_result.is_ok() {
+                Ok(())
+            } else {
+                Err(primary_error.to_string())
+            }
+        }
+    }
 }
 
 pub fn helper_pid() -> Option<u32> {

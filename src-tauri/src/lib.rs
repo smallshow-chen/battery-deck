@@ -19,7 +19,7 @@ use tauri::{
     AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent,
 };
 
-const APP_DISPLAY_NAME: &str = "MyBatteryManager";
+const APP_DISPLAY_NAME: &str = "Battery Deck";
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "main-tray";
 
@@ -721,6 +721,11 @@ fn get_service_logs(_: State<AppState>, lines: Option<usize>) -> Result<String, 
 }
 
 #[tauri::command]
+fn clear_service_logs(_: State<AppState>) -> Result<(), String> {
+    service::clear_logs()
+}
+
+#[tauri::command]
 fn get_battery_health(_: State<AppState>, app: AppHandle) -> Result<Option<BatteryHealth>, String> {
     Ok(battery::get_battery_health_cached(
         &app.state::<AppState>().cache.0,
@@ -827,6 +832,7 @@ pub fn run() {
             start_service,
             stop_service,
             get_service_logs,
+            clear_service_logs,
             get_battery_health,
             get_battery_realtime,
             get_charger_info,

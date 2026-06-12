@@ -1,10 +1,10 @@
-// Battery Toolkit i18n runtime
+// Battery Deck i18n runtime
 // Supports persisted locale mode and runtime re-translation.
 
 const TRANSLATIONS = {
   en: {
     "loading.text": "Loading battery state...",
-    "app.title": "Battery Toolkit",
+    "app.title": "Battery Deck",
     "app.subtitle": "Battery control for Apple Silicon Macs",
     "badge.enabled": "Enabled",
     "badge.disabled": "Disabled",
@@ -67,6 +67,7 @@ const TRANSLATIONS = {
     "btn.close_modal": "Close",
     "btn.view_service_logs": "Service Logs",
     "btn.check_updates": "Check for Updates",
+    "btn.clear_logs": "Clear Logs",
     "btn.coming_soon": "Coming Soon",
     "setting.adapter_sleep": "Disable sleep when adapter disabled",
     "setting.adapter_sleep_desc":
@@ -91,8 +92,9 @@ const TRANSLATIONS = {
     "menu.logs_title": "Service Logs",
     "menu.placeholder_repo": "http:github.com/xxx",
     "menu.author_email": "QQ Mail: 2413067063@qq.com",
+    "menu.version": "Version",
     "menu.check_updates_desc": "Placeholder only. No update flow yet.",
-    "unsupported.message": "This device is not supported by Battery Toolkit.",
+    "unsupported.message": "This device is not supported by Battery Deck.",
     "section.realtime": "Realtime",
     "rt.temperature": "Temperature",
     "rt.power": "Power",
@@ -126,6 +128,7 @@ const TRANSLATIONS = {
     "msg.language_updated": "Language updated",
     "msg.theme_updated": "Theme updated",
     "msg.refresh_complete": "Dashboard refreshed",
+    "msg.logs_cleared": "Logs cleared",
     "validation.min_exceeds_max":
       "Min charge (%{min}%) exceeds max charge (%{max}%)",
     "validation.min_at_least": "Min charge must be at least 20%",
@@ -136,7 +139,7 @@ const TRANSLATIONS = {
 
   zh: {
     "loading.text": "正在加载电池状态...",
-    "app.title": "电池工具箱",
+    "app.title": "Battery Deck",
     "app.subtitle": "适用于 Apple Silicon Mac 的电池控制工具",
     "badge.enabled": "已启用",
     "badge.disabled": "已禁用",
@@ -199,6 +202,7 @@ const TRANSLATIONS = {
     "btn.close_modal": "关闭",
     "btn.view_service_logs": "服务日志",
     "btn.check_updates": "检查更新",
+    "btn.clear_logs": "清理日志",
     "btn.coming_soon": "即将支持",
     "setting.adapter_sleep": "禁用适配器时阻止系统睡眠",
     "setting.adapter_sleep_desc": "当电源适配器被禁用时，阻止系统进入睡眠状态",
@@ -220,8 +224,9 @@ const TRANSLATIONS = {
     "menu.logs_title": "服务日志",
     "menu.placeholder_repo": "http:github.com/xxx",
     "menu.author_email": "QQ 邮箱：2413067063@qq.com",
+    "menu.version": "版本",
     "menu.check_updates_desc": "当前仅做占位，暂未接入更新功能。",
-    "unsupported.message": "此设备不支持电池工具箱。",
+    "unsupported.message": "此设备不支持 Battery Deck。",
     "section.realtime": "实时状态",
     "rt.temperature": "温度",
     "rt.power": "功率",
@@ -255,6 +260,7 @@ const TRANSLATIONS = {
     "msg.language_updated": "语言已更新",
     "msg.theme_updated": "主题已更新",
     "msg.refresh_complete": "面板已刷新",
+    "msg.logs_cleared": "日志已清理",
     "validation.min_exceeds_max": "最低电量（%{min}%）不能超过最高电量（%{max}%）",
     "validation.min_at_least": "最低电量不能低于 20%",
     "validation.max_at_least": "最高电量不能低于 50%",

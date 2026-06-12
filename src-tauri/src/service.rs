@@ -510,6 +510,10 @@ pub fn get_logs(lines: usize) -> Result<String, String> {
     }
 }
 
+pub fn clear_logs() -> Result<(), String> {
+    helper::clear_helper_logs()
+}
+
 fn request<T: DeserializeOwned>(command: &str, payload: Value) -> Result<T, String> {
     let socket_path = helper::socket_path();
     let mut stream = UnixStream::connect(socket_path).map_err(|e| e.to_string())?;

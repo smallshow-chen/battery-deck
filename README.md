@@ -1,171 +1,221 @@
-# Battery Toolkit
+# Battery Deck
 
-macOS 电池管理工具，适用于 Apple Silicon Mac。通过 SMC 直接控制充电行为，提供可视化仪表盘和系统托盘菜单。
+[简体中文](README.zh-CN.md)
 
-## 功能
+Battery Deck is a macOS battery charge management app for Apple Silicon Macs.  
+It combines a native Tauri desktop app, a privileged helper daemon, and a compact dashboard for charge limits, adapter control, live metrics, and battery health.
 
-- **充电策略**：充至满电 / 充至上限 / 恢复限充 / 停止充电 / 禁用适配器
-- **充电限制**：可调节最低电量和最高电量阈值
-- **实时监控**：温度、功率、电压、电流、充电状态
-- **电池健康**：循环次数、电池寿命百分比、设计/实际/当前容量
-- **设备信息**：机型、芯片、内存、首次设置日期
-- **充电器信息**：适配器名称、功率、输出电压/电流
-- **系统托盘**：右键菜单快捷操作，左键打开主窗口
-- **特权服务**：以 root 权限运行的 helper 守护进程，通过 Unix Socket 与主应用通信
-- **i18n**：自动检测系统语言，支持中文/英文
-- **暗色模式**：跟随系统外观自动切换
+> Status: active local project, not notarized, intended for advanced macOS users comfortable with privileged helper installation.
 
-## 技术栈
+## Highlights
 
-| 层级 | 技术 |
-|------|------|
-| 框架 | Tauri v2 |
-| 后端 | Rust（`tauri`、`serde`、`tokio`、`regex`） |
-| 前端 | Vanilla HTML + CSS + JavaScript |
-| SMC 通信 | IOKit FFI（`core-foundation`、`mach2`） |
-| 服务管理 | macOS LaunchDaemon / LaunchAgent |
+- Charge strategy controls: charge to full, charge to limit, resume limits, disable charging, disable adapter
+- Adjustable minimum and maximum charge thresholds
+- Live battery telemetry: temperature, power, voltage, current, charging state
+- Battery health overview: cycle count, health percentage, design/actual/current capacity
+- Charger and device information: adapter name, wattage, model, chip, memory, activation date
+- Tray menu shortcuts for common actions
+- Built-in service diagnostics and helper log viewer
+- Light, dark, and follow-system themes
+- Chinese and English UI
 
-## 项目结构
+## Why This Project Exists
 
-```
-battery-toolkit-tauri/
-├── src/                          # 前端
-│   ├── index.html                # 主页面（仪表盘布局）
-│   ├── main.js                   # 前端逻辑（Tauri invoke、轮询、DOM 更新）
-│   ├── i18n.js                   # 国际化（中/英自动检测）
-│   └── styles.css                # 样式（玻璃态设计、暗色模式、响应式）
-├── src-tauri/                    # 后端
+Battery Deck is built for users who want direct battery charge control on Apple Silicon Macs without relying on a cloud service, subscription model, or Electron stack.
+
+The app uses a privileged helper because some SMC-related operations require elevated access. The GUI stays unprivileged; only the helper handles hardware-level actions.
+
+## Screenshots
+
+### English UI
+
+![Battery Deck English Dashboard](docs/images/battery-deck-dashboard-en.png)
+
+## Core Features
+
+### Charge Management
+
+- Charge to full
+- Charge to limit
+- Resume standard limit mode
+- Disable charging
+- Disable or enable the power adapter
+
+### Monitoring
+
+- Real-time battery telemetry
+- Health snapshot and capacity statistics
+- Charger voltage and current details
+- Device hardware summary
+
+### Service Tooling
+
+- Install privileged helper service
+- Start and stop service
+- View helper logs
+- Clear logs from the UI
+
+## Project Structure
+
+```text
+battery-deck-tauri/
+├── src/                         # Frontend (HTML, CSS, JS)
+│   ├── index.html
+│   ├── main.js
+│   ├── i18n.js
+│   └── styles.css
+├── src-tauri/                   # Rust backend and helper
 │   ├── src/
-│   │   ├── main.rs               # 入口，调用 lib::run()
-│   │   ├── lib.rs                # Tauri 命令注册、托盘菜单、窗口管理、电池轮询
-│   │   ├── battery.rs            # 电池数据模型、ioreg/pmset/system_profiler 解析
-│   │   ├── helper.rs             # root 守护进程（Unix Socket、SMC 控制、状态持久化）
-│   │   ├── service.rs            # 服务生命周期管理（安装/启动/停止/通信）
-│   │   ├── smc.rs                # Apple SMC IOKit FFI（读写充电控制寄存器）
+│   │   ├── main.rs
+│   │   ├── lib.rs
+│   │   ├── battery.rs
+│   │   ├── helper.rs
+│   │   ├── service.rs
+│   │   ├── smc.rs
 │   │   └── bin/
-│   │       └── battery-helper.rs # helper 二进制入口
+│   │       └── battery-helper.rs
 │   ├── Cargo.toml
-│   └── tauri.conf.json           # Tauri 配置（窗口、权限、打包）
+│   └── tauri.conf.json
 ├── scripts/
-│   ├── restart-dev.sh            # 开发启动脚本（支持 --reinstall-root-helper）
-│   └── package-release.sh        # 打包发布脚本（生成 .dmg 和 .zip）
+│   ├── restart-dev.sh
+│   └── package-release.sh
 └── package.json
 ```
 
-## 快速开始
+## Architecture
 
-### 前置依赖
+```text
+Tauri Frontend (HTML/CSS/JS)
+        │
+        │ invoke() / events
+        ▼
+Rust Tauri Backend (lib.rs)
+        │
+        │ Unix socket + JSON protocol
+        ▼
+Privileged Helper Daemon (battery-helper)
+        │
+        ▼
+Apple SMC / system power control
+```
 
-- macOS（Apple Silicon）
-- [Rust](https://rustup.rs/)（stable）
-- [Node.js](https://nodejs.org/)（v18+）
+### Main Components
 
-### 开发
+- `src/main.js`: frontend state, DOM updates, menus, modal handling, Tauri invokes
+- `src-tauri/src/lib.rs`: Tauri commands, tray behavior, polling, app lifecycle
+- `src-tauri/src/battery.rs`: battery, charger, and system info probing/parsing
+- `src-tauri/src/helper.rs`: privileged daemon, control logic, runtime state, logs
+- `src-tauri/src/service.rs`: helper installation, launchd integration, IPC client
+- `src-tauri/src/smc.rs`: Apple SMC bindings and charge control primitives
+
+## Requirements
+
+- macOS on Apple Silicon
+- Rust stable
+- Node.js 18+
+- A user willing to authorize a privileged helper install when charge control is needed
+
+## Development
+
+Install dependencies:
 
 ```bash
-cd battery-toolkit-tauri
 npm install
+```
+
+Start the app for development:
+
+```bash
 ./scripts/restart-dev.sh
 ```
 
-如果需要重新安装 root helper 服务：
+If you changed helper installation or helper binary behavior and need to reinstall the root helper:
 
 ```bash
 ./scripts/restart-dev.sh --reinstall-root-helper
 ```
 
-### 构建发布包
+## Build
+
+Create release artifacts:
 
 ```bash
 ./scripts/package-release.sh
 ```
 
-产物输出到 `release-artifacts/`：
-- `MyBatteryManager.app` — macOS 应用包
-- `MyBatteryManager_x.x.x_arm64.dmg` — 安装镜像
-- `MyBatteryManager_x.x.x_arm64.zip` — 压缩包
+Artifacts are written to `release-artifacts/`.
 
-## 架构概览
+## Installation Notes
 
-```
-┌─────────────────────────────────────────────────┐
-│  Tauri 前端（HTML/CSS/JS）                       │
-│  invoke() ←→ Tauri Command                      │
-└──────────────────────┬──────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────┐
-│  lib.rs — Tauri 后端（19 个命令）                │
-│  电池轮询 · 托盘菜单 · 窗口管理                  │
-└──────────────────────┬──────────────────────────┘
-                       │ Unix Socket (JSON)
-┌──────────────────────▼──────────────────────────┐
-│  battery-helper（root 守护进程）                 │
-│  SMC 读写 · 充电控制 · 状态持久化                │
-└─────────────────────────────────────────────────┘
+This app is currently not notarized. On a clean macOS machine, Gatekeeper may block it on first launch.
+
+Possible ways to open it:
+
+1. Remove quarantine attributes:
+
+```bash
+xattr -cr /Applications/Battery\ Deck.app
 ```
 
-### Tauri 命令列表
+2. Right-click the app and choose `Open`
+3. Open `System Settings > Privacy & Security` and allow the blocked app
 
-| 命令 | 说明 |
-|------|------|
-| `get_battery_state` | 获取电池综合状态 |
-| `get_battery_realtime` | 获取实时数据（温度/功率/电压/电流） |
-| `get_battery_health` | 获取电池健康信息 |
-| `get_charger_info` | 获取充电器信息 |
-| `get_system_info` | 获取设备信息（机型/芯片/内存） |
-| `get_settings` / `set_settings` | 读取/保存设置 |
-| `charge_to_full` | 充至满电 |
-| `charge_to_limit` | 充至上限 |
-| `disable_charging_cmd` | 停止充电 |
-| `disable_adapter_cmd` / `enable_adapter_cmd` | 禁用/启用适配器 |
-| `reset_charge_mode` | 恢复标准限充 |
-| `get_service_status` | 获取服务状态 |
-| `install_service` | 安装特权服务 |
-| `start_service` / `stop_service` | 启动/停止服务 |
-| `get_service_logs` | 获取服务日志 |
-| `is_supported` | 检查设备支持 |
+## Helper Upgrade Behavior
 
-### Helper 通信协议
+The GUI app and the privileged helper are versioned separately in practice.
 
-主应用与 helper 通过 Unix Socket 交换 JSON：
+- Updating the app does not automatically replace an already installed root helper
+- Reinstalling the helper is required when the helper binary changes
+- The project intentionally keeps helper service identifiers and install paths stable to preserve upgrade compatibility
 
-**请求**
-```json
-{
-  "id": "uuid",
-  "command": "charge_to_full",
-  "payload": null
-}
+In development, use:
+
+```bash
+./scripts/restart-dev.sh --reinstall-root-helper
 ```
 
-**响应**
-```json
-{
-  "id": "uuid",
-  "ok": true,
-  "data": { "mode": "ToFull", "chargingDisabled": false, ... },
-  "error": null
-}
-```
+In a production-style workflow, the app should detect an outdated installed helper and prompt the user to reinstall or update it with administrator approval.
 
-## CSS 架构
+## Logging
 
-样式采用玻璃态（glassmorphism）设计，结构清晰：
+Battery Deck exposes helper logs in the UI.
 
-| 区块 | 说明 |
-|------|------|
-| Variables | CSS 自定义属性（颜色、圆角、阴影、过渡） |
-| Utility classes | `.card`（卡片背景）、`.label-caps`（大写标签） |
-| App shell / Titlebar | 应用外壳和标题栏 |
-| Overview | 电池状态面板（设备信息、电池图标、健康数据） |
-| Service / Controls | 服务管理、操作按钮、充电限制滑块 |
-| Dark mode | `@media (prefers-color-scheme: dark)` 全面适配 |
-| Responsive | 920px / 760px 断点响应式布局 |
+- Logs are stored by the helper
+- Entries include readable local timestamps
+- The log modal supports refresh and clear actions
+- Newest entries are shown first in the UI
 
-## 许可
+## Known Limitations
+
+- Apple Silicon only
+- Requires a privileged helper for hardware-level battery control
+- Not notarized yet
+- No built-in updater yet
+- Helper/service upgrade flow is functional but not yet polished as a user-facing update system
+
+## Roadmap
+
+- Better helper version/update detection
+- Polished first-run installation flow
+- More explicit diagnostics and health reporting
+- Better release automation and notarization workflow
+- Improved screenshots and public documentation
+
+## Contributing
+
+This repository is still evolving quickly, so large refactors should start with an issue or discussion first.
+
+If you contribute:
+
+- Keep helper and SMC changes narrow and auditable
+- Prefer small, testable Rust changes
+- Preserve existing UI conventions unless doing an intentional design pass
+- Be careful with service labels, runtime paths, and privileged install behavior
+
+## License
 
 [GPL v3](LICENSE)
 
-## 致谢
+## Acknowledgements
 
-- [Battery-Toolkit](https://github.com/mhaeuser/Battery-Toolkit) — 项目灵感来源，原项目使用 Swift 实现
+- [Battery-Toolkit](https://github.com/mhaeuser/Battery-Toolkit) for the original inspiration

@@ -1,4 +1,4 @@
-// Battery Toolkit - Frontend Logic
+// Battery Deck - Frontend Logic
 // Uses Tauri v2 API via window.__TAURI__ (withGlobalTauri enabled)
 
 const { invoke } = window.__TAURI__.core;
@@ -86,6 +86,7 @@ function cacheDom() {
 
   dom.serviceLogModal = document.getElementById("service-log-modal");
   dom.btnCloseServiceLog = document.getElementById("btn-close-service-log");
+  dom.btnClearLogs = document.getElementById("btn-clear-logs");
   dom.btnRefreshLogs = document.getElementById("btn-refresh-logs");
   dom.serviceLog = document.getElementById("service-log");
 
@@ -155,11 +156,15 @@ function cacheDom() {
   dom.deviceMemory = document.getElementById("device-memory");
   dom.deviceActivated = document.getElementById("device-activated");
 
+  dom.appVersionBadge = document.getElementById("app-version-badge");
+  dom.menuAppVersion = document.getElementById("menu-app-version");
+
   scrollContainers = [dom.dashboardScroll].filter(Boolean);
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   cacheDom();
+  initializeAppVersion();
   initializeTheme();
   initializeLocaleControls();
   bindEvents();
@@ -177,6 +182,16 @@ async function initialize() {
     showError("Failed to initialize: " + formatError(err));
   } finally {
     hideLoading();
+  }
+}
+
+async function initializeAppVersion() {
+  try {
+    const version = await window.__TAURI__.app.getVersion();
+    if (dom.appVersionBadge) dom.appVersionBadge.textContent = "v" + version;
+    if (dom.menuAppVersion) dom.menuAppVersion.textContent = "v" + version;
+  } catch (e) {
+    console.warn("Failed to read app version:", e);
   }
 }
 
@@ -338,10 +353,22 @@ async function loadDashboardSnapshot() {
 async function refreshServiceLogs() {
   try {
     const logs = await invoke("get_service_logs", { lines: 40 });
-    dom.serviceLog.textContent = logs && logs.trim() ? logs : "--";
+    dom.serviceLog.textContent = formatLogsForDisplay(logs);
   } catch (err) {
     dom.serviceLog.textContent = formatError(err);
   }
+}
+
+function formatLogsForDisplay(logs) {
+  if (!logs || !logs.trim()) {
+    return "--";
+  }
+  return logs
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0)
+    .reverse()
+    .join("\n");
 }
 
 async function refreshVisibleState() {
@@ -407,6 +434,7 @@ function bindEvents() {
   dom.btnMoreMenu.addEventListener("click", () => toggleMenu("more"));
   dom.btnOpenServiceLog.addEventListener("click", openServiceLogModal);
   dom.btnCloseServiceLog.addEventListener("click", closeServiceLogModal);
+  dom.btnClearLogs.addEventListener("click", onClearLogs);
   dom.serviceLogModal.addEventListener("click", onModalBackdropClick);
 
   for (const item of dom.themeMenuItems) {
@@ -685,6 +713,19 @@ async function onRefreshLogs() {
   try {
     setServiceButtonsDisabled(true);
     await refreshServiceLogs();
+  } finally {
+    setServiceButtonsDisabled(false);
+  }
+}
+
+async function onClearLogs() {
+  try {
+    setServiceButtonsDisabled(true);
+    await invoke("clear_service_logs");
+    await refreshServiceLogs();
+    showSuccess(__("msg.logs_cleared"));
+  } catch (err) {
+    showError("Failed: " + formatError(err));
   } finally {
     setServiceButtonsDisabled(false);
   }
@@ -1085,6 +1126,7 @@ function setServiceButtonsDisabled(disabled) {
   dom.btnInstallService.disabled = disabled;
   dom.btnStartService.disabled = disabled || serviceState.running;
   dom.btnStopService.disabled = disabled || !serviceState.running;
+  dom.btnClearLogs.disabled = disabled;
   dom.btnRefreshLogs.disabled = disabled;
 }
 

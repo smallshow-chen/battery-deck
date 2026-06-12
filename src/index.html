@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MyBatteryManager</title>
+    <title>Battery Deck</title>
     <link rel="stylesheet" href="styles.css" />
     <script type="module" src="/i18n.js" defer></script>
     <script type="module" src="/main.js" defer></script>
@@ -40,6 +40,18 @@
               <h2 class="panel-title" id="service-log-modal-title" data-i18n="menu.logs_title">Service Logs</h2>
             </div>
             <div class="modal-actions">
+              <button class="action-btn action-warning" id="btn-clear-logs" type="button">
+                <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M4 7h16" />
+                    <path d="M9.5 3.5h5" />
+                    <path d="M7 7l.8 12a2 2 0 0 0 2 1.8h4.4a2 2 0 0 0 2-1.8L17 7" />
+                    <path d="M10 10.5v6" />
+                    <path d="M14 10.5v6" />
+                  </svg>
+                </span>
+                <span data-i18n="btn.clear_logs">Clear Logs</span>
+              </button>
               <button class="action-btn" id="btn-refresh-logs" type="button">
                 <span class="btn-icon btn-icon-svg" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
@@ -74,7 +86,7 @@
         <div class="titlebar-brand">
           <img class="app-logo" src="assets/app-logo.png" alt="" aria-hidden="true" />
           <div class="titlebar-copy">
-            <h1 class="app-title" data-i18n="app.title">Battery Toolkit</h1>
+            <h1 class="app-title"><span data-i18n="app.title">Battery Deck</span><span class="app-version-badge" id="app-version-badge"></span></h1>
             <p class="app-subtitle" data-i18n="app.subtitle">Battery control for Apple Silicon Macs</p>
           </div>
         </div>
@@ -189,15 +201,6 @@
               </button>
               <div class="menu-divider"></div>
               <div class="menu-section">
-                <span class="menu-section-label" data-i18n="menu.author">Author</span>
-                <span class="menu-section-value" data-i18n="menu.author_email">QQ Mail: 2413067063@qq.com</span>
-              </div>
-              <div class="menu-section">
-                <span class="menu-section-label" data-i18n="menu.github">GitHub</span>
-                <span class="menu-section-value" data-i18n="menu.placeholder_repo">http:github.com/xxx</span>
-              </div>
-              <div class="menu-divider"></div>
-              <div class="menu-section">
                 <span class="menu-section-label" data-i18n="setting.language">Language</span>
                 <label class="select-field menu-select-field">
                   <select id="select-language">
@@ -215,6 +218,19 @@
                 </span>
                 <span class="menu-chip" data-i18n="status.coming_soon">Coming Soon</span>
               </div>
+              <div class="menu-divider"></div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="menu.author">Author</span>
+                <span class="menu-section-value" data-i18n="menu.author_email">QQ Mail: 2413067063@qq.com</span>
+              </div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="menu.github">GitHub</span>
+                <span class="menu-section-value" data-i18n="menu.placeholder_repo">http:github.com/xxx</span>
+              </div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="menu.version">Version</span>
+                <span class="menu-section-value" id="menu-app-version">--</span>
+              </div>
             </div>
           </div>
         </div>
@@ -229,7 +245,7 @@
               <path d="M10.4 4.8 3.9 16a2 2 0 0 0 1.73 3h13a2 2 0 0 0 1.73-3L13.86 4.8a2.15 2.15 0 0 0-3.46 0Z" />
             </svg>
           </span>
-          <span data-i18n="unsupported.message">This device is not supported by Battery Toolkit.</span>
+          <span data-i18n="unsupported.message">This device is not supported by Battery Deck.</span>
         </div>
 
         <div class="root-notice" id="root-notice" style="display: none;">
