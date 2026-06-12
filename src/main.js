@@ -44,6 +44,29 @@ let serviceState = {
   lastError: null,
 };
 
+let updateState = {
+  configured: false,
+  checking: false,
+  updateAvailable: false,
+  currentVersion: "",
+  latestVersion: null,
+  notes: null,
+  publishedAt: null,
+  downloadInProgress: false,
+  downloadedBytes: 0,
+  contentLength: null,
+  readyToInstall: false,
+  startupBadgeVisible: false,
+  error: null,
+};
+
+let helperUpdateState = {
+  bundledVersion: "",
+  installedVersion: null,
+  upgradeNeeded: false,
+  installed: false,
+};
+
 let settingsDirty = false;
 let pollTimer = null;
 let toastTimer = null;
@@ -83,6 +106,16 @@ function cacheDom() {
   dom.moreMenu = document.getElementById("more-menu");
   dom.themeMenuItems = Array.from(document.querySelectorAll("[data-theme-option]"));
   dom.btnOpenServiceLog = document.getElementById("btn-open-service-log");
+  dom.moreMenuAlertDot = document.getElementById("more-menu-alert-dot");
+  dom.updateMenuAlertDot = document.getElementById("update-menu-alert-dot");
+  dom.updateStatusText = document.getElementById("update-status-text");
+  dom.updateLatestVersionText = document.getElementById("update-latest-version-text");
+  dom.updateProgressText = document.getElementById("update-progress-text");
+  dom.btnCheckUpdates = document.getElementById("btn-check-updates");
+  dom.btnInstallUpdate = document.getElementById("btn-install-update");
+  dom.helperUpdateBlock = document.getElementById("helper-update-block");
+  dom.helperUpdateText = document.getElementById("helper-update-text");
+  dom.btnUpgradeHelper = document.getElementById("btn-upgrade-helper");
 
   dom.serviceLogModal = document.getElementById("service-log-modal");
   dom.btnCloseServiceLog = document.getElementById("btn-close-service-log");
@@ -174,7 +207,12 @@ window.addEventListener("DOMContentLoaded", async () => {
 
 async function initialize() {
   try {
-    await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
+    await Promise.all([
+      loadDashboardSnapshot(),
+      refreshServiceLogs(),
+      refreshUpdateStatus(),
+      refreshHelperUpdateStatus(),
+    ]);
     startPolling();
     setupEventListener();
   } catch (err) {
@@ -433,9 +471,20 @@ function bindEvents() {
   dom.btnThemeMenu.addEventListener("click", () => toggleMenu("theme"));
   dom.btnMoreMenu.addEventListener("click", () => toggleMenu("more"));
   dom.btnOpenServiceLog.addEventListener("click", openServiceLogModal);
+  dom.btnCheckUpdates?.addEventListener("click", onCheckUpdates);
+  dom.btnInstallUpdate?.addEventListener("click", onInstallUpdate);
+  dom.btnUpgradeHelper?.addEventListener("click", onUpgradeHelper);
   dom.btnCloseServiceLog.addEventListener("click", closeServiceLogModal);
   dom.btnClearLogs.addEventListener("click", onClearLogs);
   dom.serviceLogModal.addEventListener("click", onModalBackdropClick);
+
+  const githubLink = document.getElementById("link-github-repo");
+  if (githubLink) {
+    githubLink.addEventListener("click", async (e) => {
+      e.preventDefault();
+      await window.__TAURI__.opener.openUrl(githubLink.href);
+    });
+  }
 
   for (const item of dom.themeMenuItems) {
     item.addEventListener("click", () => {
@@ -735,13 +784,60 @@ async function onRefreshDashboard() {
   try {
     dom.btnRefreshDashboard.disabled = true;
     dom.btnRefreshDashboard.classList.add("is-refreshing");
-    await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
+    await Promise.all([
+      loadDashboardSnapshot(),
+      refreshServiceLogs(),
+      refreshUpdateStatus(),
+      refreshHelperUpdateStatus(),
+    ]);
     showSuccess(__("msg.refresh_complete"));
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
     dom.btnRefreshDashboard.classList.remove("is-refreshing");
     dom.btnRefreshDashboard.disabled = false;
+  }
+}
+
+async function onCheckUpdates() {
+  try {
+    setUpdateButtonsDisabled(true);
+    updateState = await invoke("check_for_updates");
+    showSuccess(__("msg.update_check_complete"));
+    updateUpdateCard();
+  } catch (err) {
+    showError("Failed: " + formatError(err));
+  } finally {
+    setUpdateButtonsDisabled(false);
+  }
+}
+
+async function onInstallUpdate() {
+  try {
+    setUpdateButtonsDisabled(true);
+    updateState = await invoke("download_and_install_update");
+    showSuccess(__("msg.update_install_started"));
+    updateUpdateCard();
+  } catch (err) {
+    showError("Failed: " + formatError(err));
+    setUpdateButtonsDisabled(false);
+  }
+}
+
+async function onUpgradeHelper() {
+  try {
+    if (dom.btnUpgradeHelper) {
+      dom.btnUpgradeHelper.disabled = true;
+    }
+    await invoke("upgrade_helper");
+    await Promise.all([loadDashboardSnapshot(), refreshHelperUpdateStatus()]);
+    showSuccess(__("msg.helper_upgraded"));
+  } catch (err) {
+    showError("Failed: " + formatError(err));
+  } finally {
+    if (dom.btnUpgradeHelper) {
+      dom.btnUpgradeHelper.disabled = false;
+    }
   }
 }
 
@@ -816,6 +912,15 @@ function setupEventListener() {
   }).catch((err) => {
     console.warn("Could not listen for tray-action-error events:", err);
   });
+
+  listen("update-status-changed", (event) => {
+    if (event.payload) {
+      Object.assign(updateState, event.payload);
+      updateUpdateCard();
+    }
+  }).catch((err) => {
+    console.warn("Could not listen for update-status-changed events:", err);
+  });
 }
 
 function stopPolling() {
@@ -855,6 +960,7 @@ function updateUI() {
   updateUnsupportedBanner();
   updateControlAvailability();
   updateServiceCard();
+  updateUpdateCard();
 }
 
 function updateBatteryDisplay() {
@@ -1075,6 +1181,85 @@ function updateServiceCard() {
   dom.btnStopService.disabled = !serviceState.running;
 }
 
+function updateUpdateCard() {
+  const hasBadge = !!updateState.startupBadgeVisible;
+  if (dom.moreMenuAlertDot) {
+    dom.moreMenuAlertDot.hidden = !hasBadge;
+  }
+  if (dom.updateMenuAlertDot) {
+    dom.updateMenuAlertDot.hidden = !hasBadge;
+  }
+
+  let statusText = __("update.status.idle");
+  if (!updateState.configured) {
+    statusText = updateState.error || __("update.status.unconfigured");
+  } else if (updateState.error) {
+    statusText = updateState.error;
+  } else if (updateState.checking) {
+    statusText = __("update.status.checking");
+  } else if (updateState.downloadInProgress) {
+    statusText = __("update.status.downloading");
+  } else if (updateState.readyToInstall) {
+    statusText = __("update.status.ready");
+  } else if (updateState.updateAvailable) {
+    statusText = __("update.status.available");
+  } else if (updateState.latestVersion) {
+    statusText = __("update.status.latest");
+  }
+
+  if (dom.updateStatusText) {
+    dom.updateStatusText.textContent = statusText;
+  }
+
+  if (dom.updateLatestVersionText) {
+    if (updateState.latestVersion) {
+      dom.updateLatestVersionText.hidden = false;
+      dom.updateLatestVersionText.textContent =
+        `v${updateState.currentVersion} -> v${updateState.latestVersion}`;
+    } else {
+      dom.updateLatestVersionText.hidden = true;
+      dom.updateLatestVersionText.textContent = "";
+    }
+  }
+
+  if (dom.updateProgressText) {
+    const progressVisible = updateState.downloadInProgress || !!updateState.contentLength;
+    dom.updateProgressText.hidden = !progressVisible;
+    if (progressVisible) {
+      const total = updateState.contentLength || 0;
+      const current = updateState.downloadedBytes || 0;
+      dom.updateProgressText.textContent = total > 0 ? `${current} / ${total} bytes` : `${current} bytes`;
+    } else {
+      dom.updateProgressText.textContent = "";
+    }
+  }
+
+  if (dom.btnCheckUpdates) {
+    dom.btnCheckUpdates.disabled = updateState.checking || updateState.downloadInProgress;
+  }
+  if (dom.btnInstallUpdate) {
+    dom.btnInstallUpdate.hidden = !updateState.updateAvailable || !updateState.configured;
+    dom.btnInstallUpdate.disabled = updateState.checking || updateState.downloadInProgress;
+  }
+
+  const showHelperUpgrade = !!helperUpdateState.upgradeNeeded;
+  if (dom.helperUpdateBlock) {
+    dom.helperUpdateBlock.hidden = !showHelperUpgrade;
+  }
+  if (dom.helperUpdateText) {
+    dom.helperUpdateText.textContent = showHelperUpgrade
+      ? helperUpdateState.installedVersion
+        ? __("update.helper_needed", {
+            bundled: helperUpdateState.bundledVersion,
+            installed: helperUpdateState.installedVersion,
+          })
+        : __("update.helper_missing", {
+            bundled: helperUpdateState.bundledVersion,
+          })
+      : "";
+  }
+}
+
 function updateSettingsUI() {
   dom.minChargeSlider.value = state.minCharge;
   dom.maxChargeSlider.value = state.maxCharge;
@@ -1130,6 +1315,15 @@ function setServiceButtonsDisabled(disabled) {
   dom.btnRefreshLogs.disabled = disabled;
 }
 
+function setUpdateButtonsDisabled(disabled) {
+  if (dom.btnCheckUpdates) {
+    dom.btnCheckUpdates.disabled = disabled;
+  }
+  if (dom.btnInstallUpdate) {
+    dom.btnInstallUpdate.disabled = disabled;
+  }
+}
+
 function showError(message) {
   if (toastTimer) clearTimeout(toastTimer);
   dom.successToast.classList.remove("visible");
@@ -1178,4 +1372,22 @@ function formatError(err) {
   if (err && err.message) return err.message;
   if (err && err.toString) return err.toString();
   return "Unknown error";
+}
+
+async function refreshUpdateStatus() {
+  try {
+    updateState = await invoke("get_update_status");
+    updateUpdateCard();
+  } catch (err) {
+    console.warn("Could not refresh update status:", err);
+  }
+}
+
+async function refreshHelperUpdateStatus() {
+  try {
+    helperUpdateState = await invoke("get_helper_version_status");
+    updateUpdateCard();
+  } catch (err) {
+    console.warn("Could not refresh helper update status:", err);
+  }
 }

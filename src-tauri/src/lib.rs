@@ -2,6 +2,7 @@ mod battery;
 pub mod helper;
 mod service;
 mod smc;
+mod update;
 
 use battery::{
     BatteryCache, BatteryHealth, BatteryRealtime, BatteryState, ChargerInfo, DashboardSnapshot,
@@ -18,6 +19,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent,
 };
+use update::{UpdateState, UpdateStatus};
 
 const APP_DISPLAY_NAME: &str = "Battery Deck";
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -625,6 +627,12 @@ fn perform_stop_service() -> Result<(), String> {
     service::stop_service()
 }
 
+fn perform_upgrade_helper(app: &AppHandle) -> Result<ServiceStatus, String> {
+    let status = service::upgrade_helper()?;
+    let _ = refresh_tray_menu(app);
+    Ok(status)
+}
+
 #[tauri::command]
 fn get_battery_state(app: AppHandle, _: State<AppState>) -> Result<BatteryState, String> {
     build_battery_state(&app)
@@ -768,6 +776,40 @@ fn reset_charge_mode(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_update_status(app: AppHandle, _: State<AppState>) -> Result<UpdateStatus, String> {
+    update::get_status(&app)
+}
+
+#[tauri::command]
+async fn check_for_updates(app: AppHandle, _: State<'_, AppState>) -> Result<UpdateStatus, String> {
+    update::check(app, false).await
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: AppHandle,
+    _: State<'_, AppState>,
+) -> Result<UpdateStatus, String> {
+    update::download_and_install(app).await
+}
+
+#[tauri::command]
+fn clear_update_badge(app: AppHandle, _: State<AppState>) -> Result<UpdateStatus, String> {
+    update::clear_badge(&app)
+}
+
+#[tauri::command]
+fn get_helper_version_status(app: AppHandle, _: State<AppState>) -> Result<service::HelperVersionStatus, String> {
+    let _ = app;
+    service::helper_version_status()
+}
+
+#[tauri::command]
+fn upgrade_helper(app: AppHandle, _: State<AppState>) -> Result<ServiceStatus, String> {
+    perform_upgrade_helper(&app)
+}
+
 fn spawn_battery_poll(app_handle: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_state: Option<String> = None;
@@ -806,15 +848,26 @@ fn spawn_battery_poll(app_handle: AppHandle) {
     });
 }
 
+fn spawn_startup_update_check(app_handle: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let _ = update::check(app_handle, true).await;
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        .manage(UpdateState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
+            update::initialize(&app_handle);
             setup_tray(&app_handle)?;
             attach_window_handlers(&app_handle)?;
-            spawn_battery_poll(app_handle);
+            spawn_battery_poll(app_handle.clone());
+            spawn_startup_update_check(app_handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -839,6 +892,12 @@ pub fn run() {
             get_system_info,
             get_dashboard_snapshot,
             reset_charge_mode,
+            get_update_status,
+            check_for_updates,
+            download_and_install_update,
+            clear_update_badge,
+            get_helper_version_status,
+            upgrade_helper,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

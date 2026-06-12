@@ -1,5 +1,6 @@
 use crate::battery::{HelperState, ServiceStatus};
 use crate::helper;
+use semver::Version;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fs;
@@ -11,6 +12,15 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const SERVICE_LABEL: &str = "com.smallshow.battery-toolkit-helper";
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HelperVersionStatus {
+    pub bundled_version: String,
+    pub installed_version: Option<String>,
+    pub upgrade_needed: bool,
+    pub installed: bool,
+}
 
 #[derive(Serialize)]
 struct Request {
@@ -76,6 +86,27 @@ fn helper_source_bin() -> Result<PathBuf, String> {
         "Could not locate battery-helper binary. Build the helper target before starting the service."
             .to_string()
     })
+}
+
+fn binary_version(path: &Path) -> Result<String, String> {
+    let output = Command::new(path)
+        .arg("--version")
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("Failed to query helper version".to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let version = stdout.trim();
+    if version.is_empty() {
+        Err("Helper version output was empty".to_string())
+    } else {
+        Ok(version.to_string())
+    }
+}
+
+fn parse_version_or_fallback(value: &str) -> Version {
+    Version::parse(value.trim_start_matches('v')).unwrap_or_else(|_| Version::new(0, 0, 0))
 }
 
 fn launchctl_available() -> bool {
@@ -406,6 +437,39 @@ fn spawn_fallback() -> Result<(), String> {
 
 pub fn install_service() -> Result<(), String> {
     install_root_service()
+}
+
+pub fn helper_version_status() -> Result<HelperVersionStatus, String> {
+    let bundled_path = helper_source_bin()?;
+    let bundled_version = binary_version(&bundled_path)?;
+    let installed_path = system_installed_bin();
+    let installed_version = if installed_path.exists() {
+        Some(binary_version(&installed_path)?)
+    } else {
+        None
+    };
+    let upgrade_needed = installed_version
+        .as_deref()
+        .map(|installed| {
+            parse_version_or_fallback(&bundled_version) > parse_version_or_fallback(installed)
+        })
+        .unwrap_or(true);
+
+    Ok(HelperVersionStatus {
+        bundled_version,
+        installed_version,
+        upgrade_needed,
+        installed: installed_path.exists(),
+    })
+}
+
+pub fn upgrade_helper() -> Result<ServiceStatus, String> {
+    install_root_service()?;
+    if launch_daemon_path().exists() {
+        restart_root_service()?;
+        return wait_until_running();
+    }
+    get_service_status()
 }
 
 pub fn start_service() -> Result<ServiceStatus, String> {

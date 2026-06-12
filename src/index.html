@@ -178,6 +178,7 @@
               aria-haspopup="menu"
               aria-expanded="false"
             >
+              <span class="menu-alert-dot" id="more-menu-alert-dot" hidden></span>
               <span class="chrome-btn-icon chrome-btn-icon-svg" aria-hidden="true">
                 <svg viewBox="0 0 24 24" focusable="false">
                   <circle cx="12" cy="5" r="1.75" />
@@ -211,12 +212,31 @@
                 </label>
               </div>
               <div class="menu-divider"></div>
-              <div class="menu-section">
-                <span class="menu-section-label" data-i18n="btn.check_updates">Check for Updates</span>
-                <span class="menu-section-value" data-i18n="menu.check_updates_desc">
-                  Placeholder only. No update flow yet.
+              <div class="menu-section menu-section-update" id="menu-update-section">
+                <div class="menu-section-headerline">
+                  <span class="menu-section-label" data-i18n="btn.check_updates">Check for Updates</span>
+                  <span class="menu-alert-dot menu-alert-dot-inline" id="update-menu-alert-dot" hidden></span>
+                </div>
+                <span class="menu-section-value" id="update-status-text" data-i18n="update.status.idle">
+                  Ready to check for updates.
                 </span>
-                <span class="menu-chip" data-i18n="status.coming_soon">Coming Soon</span>
+                <span class="menu-section-value" id="update-latest-version-text" hidden></span>
+                <span class="menu-section-value" id="update-progress-text" hidden></span>
+                <div class="menu-update-actions">
+                  <button class="action-btn action-primary menu-inline-btn" id="btn-check-updates" type="button">
+                    <span data-i18n="btn.check_updates_now">Check Now</span>
+                  </button>
+                  <button class="action-btn menu-inline-btn" id="btn-install-update" type="button" hidden>
+                    <span data-i18n="btn.install_update">Download and Install</span>
+                  </button>
+                </div>
+                <div class="menu-update-helper" id="helper-update-block" hidden>
+                  <span class="menu-chip menu-chip-warning" data-i18n="update.helper_badge">Helper Upgrade</span>
+                  <span class="menu-section-value" id="helper-update-text"></span>
+                  <button class="action-btn menu-inline-btn" id="btn-upgrade-helper" type="button">
+                    <span data-i18n="btn.upgrade_helper">Upgrade Helper</span>
+                  </button>
+                </div>
               </div>
               <div class="menu-divider"></div>
               <div class="menu-section">
@@ -225,7 +245,7 @@
               </div>
               <div class="menu-section">
                 <span class="menu-section-label" data-i18n="menu.github">GitHub</span>
-                <span class="menu-section-value" data-i18n="menu.placeholder_repo">http:github.com/xxx</span>
+                <a class="menu-section-value menu-link" data-i18n="menu.placeholder_repo" href="https://github.com/smallshow-chen/battery-deck" id="link-github-repo">https://github.com/smallshow-chen/battery-deck</a>
               </div>
               <div class="menu-section">
                 <span class="menu-section-label" data-i18n="menu.version">Version</span>

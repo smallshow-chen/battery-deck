@@ -24,7 +24,7 @@ This script:
   2. Builds release artifacts
   3. Commits the version bump
   4. Creates and pushes a git tag
-  5. Creates a GitHub release and uploads zip/dmg assets
+  5. Creates a GitHub release and uploads zip/dmg/updater assets
 EOF
 }
 
@@ -65,6 +65,9 @@ TAG="v$VERSION"
 ARCH="$(uname -m)"
 ZIP_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.zip"
 DMG_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.dmg"
+UPDATER_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.app.tar.gz"
+UPDATER_SIG_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.app.tar.gz.sig"
+LATEST_JSON_PATH="$RELEASE_DIR/latest.json"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo "Version must use semver format, for example 0.0.2" >&2
@@ -100,7 +103,7 @@ perl -0pi -e 's/"version":\s*"[^"]+"/"version": "'"$VERSION"'"/' "$TAURI_CONFIG"
 echo "[2/6] Building release artifacts..."
 "$ROOT_DIR/scripts/package-release.sh"
 
-if [[ ! -f "$ZIP_PATH" || ! -f "$DMG_PATH" ]]; then
+if [[ ! -f "$ZIP_PATH" || ! -f "$DMG_PATH" || ! -f "$UPDATER_PATH" || ! -f "$UPDATER_SIG_PATH" || ! -f "$LATEST_JSON_PATH" ]]; then
   echo "Expected release artifacts were not generated." >&2
   exit 1
 fi
@@ -120,12 +123,18 @@ echo "[6/6] Creating GitHub release..."
 gh release create "$TAG" \
   "$ZIP_PATH" \
   "$DMG_PATH" \
+  "$UPDATER_PATH" \
+  "$UPDATER_SIG_PATH" \
+  "$LATEST_JSON_PATH" \
   --title "Battery Deck $TAG" \
   --notes "Release $TAG for Apple Silicon Macs.
 
 Assets:
 - $(basename "$ZIP_PATH")
 - $(basename "$DMG_PATH")
+- $(basename "$UPDATER_PATH")
+- $(basename "$UPDATER_SIG_PATH")
+- $(basename "$LATEST_JSON_PATH")
 
 Notes:
 - Not notarized yet
