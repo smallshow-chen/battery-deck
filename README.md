@@ -164,4 +164,8 @@ npm install
 
 ## 许可
 
-MIT
+[GPL v3](LICENSE)
+
+## 致谢
+
+- [Battery-Toolkit](https://github.com/mhaeuser/Battery-Toolkit) — 项目灵感来源，原项目使用 Swift 实现

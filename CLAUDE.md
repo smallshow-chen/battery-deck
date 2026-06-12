@@ -13,7 +13,14 @@ npm install
 ./scripts/package-release.sh                      # Full release build (.app, .dmg, .zip in release-artifacts/)
 ```
 
-The dev script kills old processes, builds `battery-helper` with `cargo build --bin battery-helper`, then runs `cargo tauri dev -- --bin battery-toolkit`. There are no tests or lint configurations.
+The dev script kills old processes, builds `battery-helper` with `cargo build --bin battery-helper`, then runs `cargo tauri dev -- --bin battery-toolkit`.
+
+```bash
+cd src-tauri && cargo test    # Run Rust tests (add focused unit tests for parsing/state/helper protocol changes)
+cd src-tauri && cargo fmt     # Format Rust code
+```
+
+There is no dedicated frontend test framework.
 
 ## Architecture
 
@@ -52,6 +59,14 @@ No framework, no build step — raw HTML/JS/CSS served directly by Tauri (`front
 **Frontend → Backend (`invoke`):** `get_dashboard_snapshot`, `get_battery_realtime`, `get_service_logs`, `set_settings`, `charge_to_full`, `charge_to_limit`, `reset_charge_mode`, `disable_charging_cmd`, `enable_adapter_cmd`, `disable_adapter_cmd`, `install_service`, `start_service`, `stop_service`
 
 **Backend → Frontend (events):** `battery-state-changed`, `app-window-visibility-changed`, `app-state-refresh-requested`, `tray-action-error`
+
+## Coding Style
+
+**Rust:** Four-space indentation, `snake_case` functions/modules, `PascalCase` types. All public functions return `Result<T, String>`. Keep SMC and privilege-related changes narrow and auditable.
+
+**Frontend:** Plain ES modules, `camelCase` JS names, existing CSS custom properties. User-facing strings go in `src/i18n.js`.
+
+**Commits:** Concise subjects with Conventional Commit prefixes (`feat:`, `fix:`, `style:`, `docs:`, `chore:`). Example: `feat: add charger detail parsing`.
 
 ## macOS-specific details
 

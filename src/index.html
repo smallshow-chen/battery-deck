@@ -19,12 +19,55 @@
       <div class="toast toast-error" id="error-toast">
         <span class="toast-icon">!</span>
         <span class="toast-message" id="error-message"></span>
-        <button class="toast-close" id="error-close">&times;</button>
+        <button class="toast-close" id="error-close" type="button">&times;</button>
       </div>
 
       <div class="toast toast-success" id="success-toast">
         <span class="toast-icon">&#10003;</span>
         <span class="toast-message" id="success-message"></span>
+      </div>
+
+      <div class="modal-backdrop" id="service-log-modal" hidden>
+        <div
+          class="modal-panel card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="service-log-modal-title"
+        >
+          <div class="modal-header">
+            <div>
+              <span class="panel-eyebrow" data-i18n="section.diagnostics">Diagnostics</span>
+              <h2 class="panel-title" id="service-log-modal-title" data-i18n="menu.logs_title">Service Logs</h2>
+            </div>
+            <div class="modal-actions">
+              <button class="action-btn" id="btn-refresh-logs" type="button">
+                <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                    <path d="M20 4v6h-6" />
+                  </svg>
+                </span>
+                <span data-i18n="btn.refresh_logs">Refresh Logs</span>
+              </button>
+              <button
+                class="chrome-btn"
+                id="btn-close-service-log"
+                type="button"
+                data-i18n-title="btn.close_modal"
+                title="Close"
+              >
+                <span class="chrome-btn-icon chrome-btn-icon-svg" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="m6 6 12 12" />
+                    <path d="m18 6-12 12" />
+                  </svg>
+                </span>
+                <span class="sr-only" data-i18n="btn.close_modal">Close</span>
+              </button>
+            </div>
+          </div>
+          <pre class="service-log card modal-log" id="service-log">--</pre>
+        </div>
       </div>
 
       <header class="titlebar window-drag">
@@ -56,26 +99,146 @@
         <div class="status-badges">
           <span class="badge" id="badge-enabled">Enabled</span>
           <span class="badge" id="badge-mode">Standard</span>
-          <button class="chrome-btn" id="btn-refresh-dashboard" type="button" data-i18n-title="btn.refresh_dashboard" title="Refresh">
-            <span class="chrome-btn-icon" aria-hidden="true">&#8635;</span>
+          <button
+            class="chrome-btn"
+            id="btn-refresh-dashboard"
+            type="button"
+            data-i18n-title="btn.refresh_dashboard"
+            title="Refresh"
+          >
+            <span class="chrome-btn-icon chrome-btn-icon-svg" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                <path d="M20 4v6h-6" />
+              </svg>
+            </span>
             <span class="sr-only" data-i18n="btn.refresh_dashboard">Refresh</span>
           </button>
-          <button class="chrome-btn" id="btn-toggle-theme" type="button" data-i18n-title="btn.toggle_theme" title="Toggle theme">
-            <span class="theme-icon theme-icon-light" aria-hidden="true">&#9788;</span>
-            <span class="theme-icon theme-icon-dark" aria-hidden="true">&#9790;</span>
-            <span class="sr-only" data-i18n="btn.toggle_theme">Toggle theme</span>
-          </button>
+
+          <div class="menu-anchor">
+            <button
+              class="chrome-btn"
+              id="btn-theme-menu"
+              type="button"
+              data-i18n-title="btn.open_theme_menu"
+              title="Theme options"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span class="chrome-btn-icon chrome-btn-icon-svg" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v2.5" />
+                  <path d="M12 19.5V22" />
+                  <path d="m4.93 4.93 1.77 1.77" />
+                  <path d="m17.3 17.3 1.77 1.77" />
+                  <path d="M2 12h2.5" />
+                  <path d="M19.5 12H22" />
+                  <path d="m4.93 19.07 1.77-1.77" />
+                  <path d="m17.3 6.7 1.77-1.77" />
+                </svg>
+              </span>
+              <span class="sr-only" data-i18n="btn.open_theme_menu">Theme options</span>
+            </button>
+            <div class="floating-menu" id="theme-menu" role="menu" hidden>
+              <button class="menu-item" type="button" data-theme-option="light" role="menuitemradio" aria-checked="false">
+                <span data-i18n="theme.light">Light</span>
+                <span class="menu-item-check" aria-hidden="true"></span>
+              </button>
+              <button class="menu-item" type="button" data-theme-option="dark" role="menuitemradio" aria-checked="false">
+                <span data-i18n="theme.dark">Dark</span>
+                <span class="menu-item-check" aria-hidden="true"></span>
+              </button>
+              <button class="menu-item" type="button" data-theme-option="system" role="menuitemradio" aria-checked="false">
+                <span data-i18n="theme.system">Follow System</span>
+                <span class="menu-item-check" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="menu-anchor">
+            <button
+              class="chrome-btn"
+              id="btn-more-menu"
+              type="button"
+              data-i18n-title="btn.open_more_menu"
+              title="More"
+              aria-haspopup="menu"
+              aria-expanded="false"
+            >
+              <span class="chrome-btn-icon chrome-btn-icon-svg" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <circle cx="12" cy="5" r="1.75" />
+                  <circle cx="12" cy="12" r="1.75" />
+                  <circle cx="12" cy="19" r="1.75" />
+                </svg>
+              </span>
+              <span class="sr-only" data-i18n="btn.open_more_menu">More</span>
+            </button>
+            <div class="floating-menu floating-menu-wide" id="more-menu" role="menu" hidden>
+              <button class="menu-item menu-item-action" id="btn-open-service-log" type="button" role="menuitem">
+                <span class="menu-item-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M5 4.75h14v14.5H5z" />
+                    <path d="M8 9h8" />
+                    <path d="M8 12h8" />
+                    <path d="M8 15h5" />
+                  </svg>
+                </span>
+                <span data-i18n="btn.view_service_logs">Service Logs</span>
+              </button>
+              <div class="menu-divider"></div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="menu.author">Author</span>
+                <span class="menu-section-value" data-i18n="menu.author_email">QQ Mail: 2413067063@qq.com</span>
+              </div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="menu.github">GitHub</span>
+                <span class="menu-section-value" data-i18n="menu.placeholder_repo">http:github.com/xxx</span>
+              </div>
+              <div class="menu-divider"></div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="setting.language">Language</span>
+                <label class="select-field menu-select-field">
+                  <select id="select-language">
+                    <option value="system" data-i18n="setting.option.system">Follow System</option>
+                    <option value="zh" data-i18n="setting.option.chinese">Chinese</option>
+                    <option value="en" data-i18n="setting.option.english">English</option>
+                  </select>
+                </label>
+              </div>
+              <div class="menu-divider"></div>
+              <div class="menu-section">
+                <span class="menu-section-label" data-i18n="btn.check_updates">Check for Updates</span>
+                <span class="menu-section-value" data-i18n="menu.check_updates_desc">
+                  Placeholder only. No update flow yet.
+                </span>
+                <span class="menu-chip" data-i18n="status.coming_soon">Coming Soon</span>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 
       <div class="notice-stack">
         <div class="unsupported-banner" id="unsupported-banner" style="display: none;">
-          <span class="unsupported-icon">&#9888;</span>
+          <span class="notice-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 9v4" />
+              <circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none" />
+              <path d="M10.4 4.8 3.9 16a2 2 0 0 0 1.73 3h13a2 2 0 0 0 1.73-3L13.86 4.8a2.15 2.15 0 0 0-3.46 0Z" />
+            </svg>
+          </span>
           <span data-i18n="unsupported.message">This device is not supported by Battery Toolkit.</span>
         </div>
 
         <div class="root-notice" id="root-notice" style="display: none;">
-          <span class="root-notice-icon">&#128274;</span>
+          <span class="notice-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <rect x="5" y="10" width="14" height="10" rx="2.5" />
+              <path d="M8.5 10V7.5a3.5 3.5 0 1 1 7 0V10" />
+            </svg>
+          </span>
           <span data-i18n="notice.no_root">Battery control service is unavailable. Build and start the Rust helper to enable charging control.</span>
         </div>
       </div>
@@ -156,30 +319,61 @@
 
                   <div class="overview-health">
                     <div class="compact-section-label" data-i18n="section.health_snapshot">Health</div>
-
                     <div class="capacity-strip">
                       <div class="capacity-item card">
-                        <span class="capacity-icon" aria-hidden="true">&#9851;</span>
+                        <span class="capacity-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M12 4v4" />
+                            <path d="M12 16v4" />
+                            <path d="M8.5 7a7.2 7.2 0 1 0 7 0" />
+                          </svg>
+                        </span>
                         <span class="capacity-label label-caps" data-i18n="health.cycle_count">Cycle Count</span>
                         <span class="capacity-value" id="health-cycles">--</span>
                       </div>
                       <div class="capacity-item card">
-                        <span class="capacity-icon" aria-hidden="true">&#9201;</span>
+                        <span class="capacity-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <circle cx="12" cy="12" r="8" />
+                            <path d="M12 8v4l2.5 2.5" />
+                          </svg>
+                        </span>
                         <span class="capacity-label label-caps" data-i18n="health.battery_life">Battery Life</span>
                         <span class="capacity-value" id="health-percent">--%</span>
                       </div>
                       <div class="capacity-item card">
-                        <span class="capacity-icon" aria-hidden="true">&#128267;</span>
+                        <span class="capacity-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M6 8.5h12" />
+                            <path d="M6 12h12" />
+                            <path d="M6 15.5h8" />
+                            <path d="M5 5h14v14H5z" />
+                          </svg>
+                        </span>
                         <span class="capacity-label label-caps" data-i18n="health.design_capacity">Design Capacity</span>
                         <span class="capacity-value" id="cap-design">--</span>
                       </div>
                       <div class="capacity-item card">
-                        <span class="capacity-icon" aria-hidden="true">&#9878;</span>
+                        <span class="capacity-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M6 8.5h12" />
+                            <path d="M6 12h8" />
+                            <path d="M6 15.5h10" />
+                            <path d="M5 5h14v14H5z" />
+                          </svg>
+                        </span>
                         <span class="capacity-label label-caps" data-i18n="health.actual_capacity">Actual Capacity</span>
                         <span class="capacity-value" id="cap-max">--</span>
                       </div>
                       <div class="capacity-item card highlight-capacity">
-                        <span class="capacity-icon" aria-hidden="true">&#9676;</span>
+                        <span class="capacity-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" focusable="false">
+                            <path d="M5 9.5h9" />
+                            <path d="M5 13h14" />
+                            <path d="M5 16.5h11" />
+                            <path d="M5 6h14v12H5z" />
+                          </svg>
+                        </span>
                         <span class="capacity-label label-caps" data-i18n="health.current_capacity">Current Capacity</span>
                         <span class="capacity-value" id="cap-current">--</span>
                       </div>
@@ -219,16 +413,30 @@
               <div class="slider-validation service-summary" id="service-error-text"></div>
 
               <div class="service-actions">
-                <button class="action-btn action-secondary" id="btn-install-service">
-                  <span class="btn-icon">&#128230;</span>
+                <button class="action-btn action-secondary" id="btn-install-service" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M12 4v10" />
+                      <path d="m8.5 10.5 3.5 3.5 3.5-3.5" />
+                      <path d="M5 18.5h14" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.install_service">Install Service</span>
                 </button>
-                <button class="action-btn action-primary" id="btn-start-service">
-                  <span class="btn-icon">&#9654;</span>
+                <button class="action-btn action-primary" id="btn-start-service" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M8 6.5 17 12l-9 5.5Z" fill="currentColor" stroke="none" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.start_service">Start Service</span>
                 </button>
-                <button class="action-btn action-warning" id="btn-stop-service">
-                  <span class="btn-icon">&#9632;</span>
+                <button class="action-btn action-warning" id="btn-stop-service" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" stroke="none" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.stop_service">Stop Service</span>
                 </button>
               </div>
@@ -263,27 +471,56 @@
               </div>
 
               <div class="actions-grid">
-                <button class="action-btn action-primary" id="btn-charge-full">
-                  <span class="btn-icon">&#9889;</span>
+                <button class="action-btn action-primary" id="btn-charge-full" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="m13 2-5 9h4l-1 11 6-10h-4l1-10Z" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.charge_full">Charge to Full</span>
                 </button>
-                <button class="action-btn action-secondary" id="btn-charge-limit">
-                  <span class="btn-icon">&#9201;</span>
+                <button class="action-btn action-secondary" id="btn-charge-limit" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <circle cx="12" cy="12" r="8" />
+                      <path d="M12 8v4" />
+                      <path d="M12 12h3" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.charge_limit">Charge to Limit</span>
                 </button>
-                <button class="action-btn" id="btn-reset-charge-mode">
-                  <span class="btn-icon">&#8634;</span>
+                <button class="action-btn" id="btn-reset-charge-mode" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+                      <path d="M20 4v6h-6" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.reset_charge_mode">Resume Limits</span>
                 </button>
-                <button class="action-btn action-warning" id="btn-disable-charging">
-                  <span class="btn-icon">&#9940;</span>
+                <button class="action-btn action-warning" id="btn-disable-charging" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <path d="M4 4 20 20" />
+                      <path d="M10 2 6 9h4l-1 6" />
+                      <path d="M14 7h4l-5 9h-2" />
+                    </svg>
+                  </span>
                   <span data-i18n="btn.disable_charging">Disable Charging</span>
                 </button>
-                <button class="action-btn action-danger action-span-full" id="btn-toggle-adapter">
-                  <span class="btn-icon">&#9211;</span>
+                <button class="action-btn action-danger action-span-full" id="btn-toggle-adapter" type="button">
+                  <span class="btn-icon btn-icon-svg" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" focusable="false">
+                      <rect x="7" y="4.5" width="10" height="8" rx="2" />
+                      <path d="M10 4.5V2.5" />
+                      <path d="M14 4.5V2.5" />
+                      <path d="M12 12.5v9" />
+                    </svg>
+                  </span>
                   <span id="adapter-btn-text" data-i18n="btn.disable_adapter">Disable Adapter</span>
                 </button>
               </div>
+              <div class="slider-validation action-hint" id="action-hint"></div>
             </section>
 
             <section class="panel">
@@ -353,7 +590,9 @@
                 <div class="setting-row card">
                   <div class="setting-info">
                     <span class="setting-name" data-i18n="setting.adapter_sleep">Disable sleep when adapter disabled</span>
-                    <span class="setting-desc" data-i18n="setting.adapter_sleep_desc">Prevents the system from sleeping when the power adapter is disabled</span>
+                    <span class="setting-desc" data-i18n="setting.adapter_sleep_desc">
+                      Prevents the system from sleeping when the power adapter is disabled
+                    </span>
                   </div>
                   <label class="toggle-switch">
                     <input type="checkbox" id="toggle-adapter-sleep" />
@@ -364,7 +603,9 @@
                 <div class="setting-row card">
                   <div class="setting-info">
                     <span class="setting-name" data-i18n="setting.magsafe_sync">Sync MagSafe LED</span>
-                    <span class="setting-desc" data-i18n="setting.magsafe_sync_desc">Synchronize the MagSafe LED indicator with charging state</span>
+                    <span class="setting-desc" data-i18n="setting.magsafe_sync_desc">
+                      Synchronize the MagSafe LED indicator with charging state
+                    </span>
                   </div>
                   <label class="toggle-switch">
                     <input type="checkbox" id="toggle-magsafe-sync" />
@@ -374,26 +615,6 @@
               </div>
             </section>
           </div>
-
-          <details class="panel diagnostics-panel">
-            <summary class="diagnostics-summary">
-              <div>
-                <span class="panel-eyebrow" data-i18n="section.diagnostics">Diagnostics</span>
-                <h2 class="panel-title" data-i18n="section.service_log">Service Log</h2>
-              </div>
-              <span class="diagnostics-toggle">Show</span>
-            </summary>
-
-            <div class="diagnostics-body">
-              <div class="diagnostics-actions">
-                <button class="action-btn" id="btn-refresh-logs">
-                  <span class="btn-icon">&#8635;</span>
-                  <span data-i18n="btn.refresh_logs">Refresh Logs</span>
-                </button>
-              </div>
-              <pre class="service-log card" id="service-log">--</pre>
-            </div>
-          </details>
         </main>
       </div>
     </div>

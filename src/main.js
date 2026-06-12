@@ -4,14 +4,27 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-// i18n helpers (exposed by i18n.js)
-const { t: __, LOCALE } = window.__i18n || { t: (k) => k, LOCALE: "en" };
+const i18nApi = window.__i18n || {};
+const __ = i18nApi.t || ((key) => key);
+const {
+  applyLocaleToDom = () => {},
+  getLocaleMode = () => "system",
+  setLocaleMode = () => false,
+  LOCALE_CHANGE_EVENT = "battery-toolkit:locale-changed",
+} = i18nApi;
 
-// ---- State ----
+const THEME_STORAGE_KEY = "battery-toolkit-theme";
+const THEME_OPTIONS = new Set(["light", "dark", "system"]);
+
 let state = {
   enabled: false,
   powerDisabled: false,
   connected: false,
+  isPlugged: false,
+  adapterConnected: false,
+  realtimeAdapterConnected: false,
+  chargerTelemetryConnected: false,
+  isCharging: false,
   chargingDisabled: false,
   chargePercent: 0,
   mode: "Standard",
@@ -43,11 +56,12 @@ let lastSnapshotPollAt = 0;
 let lastRealtimePollAt = 0;
 let scrollContainers = [];
 let windowVisible = true;
-let themeMode = "light";
+let themeMode = "system";
+let activeMenu = null;
+let lastFocusedElement = null;
+let mediaThemeQuery = null;
+let isApplyingLocale = false;
 
-const THEME_STORAGE_KEY = "battery-toolkit-theme";
-
-// ---- DOM References ----
 const dom = {};
 
 function cacheDom() {
@@ -63,18 +77,27 @@ function cacheDom() {
   dom.badgeEnabled = document.getElementById("badge-enabled");
   dom.badgeMode = document.getElementById("badge-mode");
   dom.btnRefreshDashboard = document.getElementById("btn-refresh-dashboard");
-  dom.btnToggleTheme = document.getElementById("btn-toggle-theme");
+  dom.btnThemeMenu = document.getElementById("btn-theme-menu");
+  dom.btnMoreMenu = document.getElementById("btn-more-menu");
+  dom.themeMenu = document.getElementById("theme-menu");
+  dom.moreMenu = document.getElementById("more-menu");
+  dom.themeMenuItems = Array.from(document.querySelectorAll("[data-theme-option]"));
+  dom.btnOpenServiceLog = document.getElementById("btn-open-service-log");
+
+  dom.serviceLogModal = document.getElementById("service-log-modal");
+  dom.btnCloseServiceLog = document.getElementById("btn-close-service-log");
+  dom.btnRefreshLogs = document.getElementById("btn-refresh-logs");
+  dom.serviceLog = document.getElementById("service-log");
+
   dom.serviceIndicatorDot = document.getElementById("service-indicator-dot");
   dom.serviceStatusLabel = document.getElementById("service-status-label");
   dom.serviceInstalledValue = document.getElementById("service-installed-value");
   dom.serviceRunningValue = document.getElementById("service-running-value");
   dom.serviceControlValue = document.getElementById("service-control-value");
   dom.serviceErrorText = document.getElementById("service-error-text");
-  dom.serviceLog = document.getElementById("service-log");
   dom.btnInstallService = document.getElementById("btn-install-service");
   dom.btnStartService = document.getElementById("btn-start-service");
   dom.btnStopService = document.getElementById("btn-stop-service");
-  dom.btnRefreshLogs = document.getElementById("btn-refresh-logs");
 
   dom.indicatorDot = document.getElementById("indicator-dot");
   dom.connectionText = document.getElementById("connection-text");
@@ -95,6 +118,7 @@ function cacheDom() {
   dom.minChargeFill = document.getElementById("min-charge-fill");
   dom.maxChargeFill = document.getElementById("max-charge-fill");
   dom.sliderValidation = document.getElementById("slider-validation");
+  dom.actionHint = document.getElementById("action-hint");
 
   dom.btnChargeFull = document.getElementById("btn-charge-full");
   dom.btnChargeLimit = document.getElementById("btn-charge-limit");
@@ -103,6 +127,7 @@ function cacheDom() {
   dom.btnToggleAdapter = document.getElementById("btn-toggle-adapter");
   dom.adapterBtnText = document.getElementById("adapter-btn-text");
 
+  dom.selectLanguage = document.getElementById("select-language");
   dom.toggleAdapterSleep = document.getElementById("toggle-adapter-sleep");
   dom.toggleMagSafeSync = document.getElementById("toggle-magsafe-sync");
 
@@ -133,10 +158,10 @@ function cacheDom() {
   scrollContainers = [dom.dashboardScroll].filter(Boolean);
 }
 
-// ---- Initialization ----
 window.addEventListener("DOMContentLoaded", async () => {
   cacheDom();
   initializeTheme();
+  initializeLocaleControls();
   bindEvents();
   updateSettingsUI();
   await initialize();
@@ -155,7 +180,59 @@ async function initialize() {
   }
 }
 
-// ---- Tauri Invocations ----
+function readStoredThemeMode() {
+  const saved = localStorage.getItem(THEME_STORAGE_KEY);
+  return THEME_OPTIONS.has(saved) ? saved : "system";
+}
+
+function resolveActiveTheme(mode = themeMode) {
+  if (mode === "light" || mode === "dark") {
+    return mode;
+  }
+  return mediaThemeQuery?.matches ? "dark" : "light";
+}
+
+function initializeTheme() {
+  mediaThemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") || null;
+  themeMode = readStoredThemeMode();
+  applyTheme();
+
+  if (mediaThemeQuery?.addEventListener) {
+    mediaThemeQuery.addEventListener("change", onSystemThemeChange);
+  } else if (mediaThemeQuery?.addListener) {
+    mediaThemeQuery.addListener(onSystemThemeChange);
+  }
+}
+
+function onSystemThemeChange() {
+  if (themeMode === "system") {
+    applyTheme();
+  }
+}
+
+function applyTheme() {
+  const activeTheme = resolveActiveTheme();
+  document.documentElement.dataset.theme = activeTheme;
+  document.documentElement.dataset.themeMode = themeMode;
+  updateThemeMenuState();
+}
+
+function setThemeMode(nextMode, showToastMessage = false) {
+  const normalized = THEME_OPTIONS.has(nextMode) ? nextMode : "system";
+  themeMode = normalized;
+  localStorage.setItem(THEME_STORAGE_KEY, normalized);
+  applyTheme();
+  if (showToastMessage) {
+    showSuccess(__("msg.theme_updated"));
+  }
+}
+
+function initializeLocaleControls() {
+  if (dom.selectLanguage) {
+    dom.selectLanguage.value = getLocaleMode();
+  }
+}
+
 async function refreshRealtime() {
   try {
     const rt = await invoke("get_battery_realtime");
@@ -177,6 +254,10 @@ function updateBatteryHealth(health) {
 
 function updateRealtimeMetrics(rt) {
   if (!rt) return;
+  state.realtimeAdapterConnected = !!rt.externalConnected;
+  if (rt.externalConnected) {
+    state.adapterConnected = true;
+  }
   dom.rtTemp.textContent = rt.temperature.toFixed(1);
   dom.rtPower.textContent = rt.power.toFixed(2);
   dom.rtVoltage.textContent = (rt.voltage / 1000).toFixed(3) + " V";
@@ -184,7 +265,20 @@ function updateRealtimeMetrics(rt) {
 }
 
 function updateChargerInfo(charger) {
-  if (!charger) return;
+  state.adapterConnected = !!charger?.connected;
+  state.chargerTelemetryConnected = !!(
+    charger &&
+    (
+      charger.connected ||
+      charger.wattage > 0 ||
+      charger.chargingVoltage > 0 ||
+      charger.chargingCurrent > 0 ||
+      (charger.name && charger.name !== "—" && charger.name !== "--")
+    )
+  );
+  if (!charger) {
+    return;
+  }
   dom.chargerName.textContent = charger.name;
   dom.chargerWattage.textContent = charger.connected ? charger.wattage + "W" : "—";
   dom.chargerVoltage.textContent = charger.connected ? charger.chargingVoltage + " mV" : "—";
@@ -254,32 +348,11 @@ async function refreshVisibleState() {
   await loadDashboardSnapshot();
 }
 
-function initializeTheme() {
-  const savedTheme = localStorage.getItem(THEME_STORAGE_KEY);
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  themeMode = savedTheme === "dark" || (!savedTheme && prefersDark) ? "dark" : "light";
-  applyTheme();
-}
-
-function applyTheme() {
-  document.documentElement.dataset.theme = themeMode;
-  if (dom.btnToggleTheme) {
-    dom.btnToggleTheme.classList.toggle("is-dark", themeMode === "dark");
-  }
-}
-
-function toggleTheme() {
-  themeMode = themeMode === "dark" ? "light" : "dark";
-  localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-  applyTheme();
-}
-
 async function applySettings() {
   try {
     const minCharge = parseInt(dom.minChargeSlider.value, 10);
     const maxCharge = parseInt(dom.maxChargeSlider.value, 10);
 
-    // Validate
     if (minCharge > maxCharge) {
       showValidationError(__("validation.min_exceeds_max", { min: minCharge, max: maxCharge }));
       return;
@@ -294,8 +367,8 @@ async function applySettings() {
     }
 
     await invoke("set_settings", {
-      minCharge: minCharge,
-      maxCharge: maxCharge,
+      minCharge,
+      maxCharge,
       adapterSleep: dom.toggleAdapterSleep.checked,
       magsafeSync: dom.toggleMagSafeSync.checked,
     });
@@ -314,15 +387,12 @@ async function applySettings() {
   }
 }
 
-// ---- Event Binding ----
 function bindEvents() {
-  // Sliders
   dom.minChargeSlider.addEventListener("input", onMinChargeInput);
   dom.maxChargeSlider.addEventListener("input", onMaxChargeInput);
   dom.minChargeSlider.addEventListener("change", onSettingsChange);
   dom.maxChargeSlider.addEventListener("change", onSettingsChange);
 
-  // Action buttons
   dom.btnChargeFull.addEventListener("click", onChargeToFull);
   dom.btnChargeLimit.addEventListener("click", onChargeToLimit);
   dom.btnResetChargeMode.addEventListener("click", onResetChargeMode);
@@ -333,23 +403,36 @@ function bindEvents() {
   dom.btnStopService.addEventListener("click", onStopService);
   dom.btnRefreshLogs.addEventListener("click", onRefreshLogs);
   dom.btnRefreshDashboard.addEventListener("click", onRefreshDashboard);
-  dom.btnToggleTheme.addEventListener("click", toggleTheme);
+  dom.btnThemeMenu.addEventListener("click", () => toggleMenu("theme"));
+  dom.btnMoreMenu.addEventListener("click", () => toggleMenu("more"));
+  dom.btnOpenServiceLog.addEventListener("click", openServiceLogModal);
+  dom.btnCloseServiceLog.addEventListener("click", closeServiceLogModal);
+  dom.serviceLogModal.addEventListener("click", onModalBackdropClick);
 
-  // Setting toggles
+  for (const item of dom.themeMenuItems) {
+    item.addEventListener("click", () => {
+      setThemeMode(item.dataset.themeOption, true);
+      closeMenus();
+    });
+  }
+
+  dom.selectLanguage.addEventListener("change", onLanguageChange);
   dom.toggleAdapterSleep.addEventListener("change", onSettingsChange);
   dom.toggleMagSafeSync.addEventListener("change", onSettingsChange);
 
-  // Toast close
   dom.errorClose.addEventListener("click", () => {
     dom.errorToast.classList.remove("visible");
   });
+
+  document.addEventListener("click", onDocumentClick);
+  document.addEventListener("keydown", onDocumentKeydown);
+  window.addEventListener(LOCALE_CHANGE_EVENT, onLocaleChanged);
 
   for (const container of scrollContainers) {
     container.addEventListener("scroll", onUserScroll, { passive: true });
   }
 }
 
-// ---- Event Handlers ----
 function onMinChargeInput() {
   const val = parseInt(dom.minChargeSlider.value, 10);
   dom.minChargeValue.textContent = val + "%";
@@ -366,7 +449,6 @@ function onMaxChargeInput() {
 
 function onSettingsChange() {
   settingsDirty = true;
-  // Debounce settings save by 500ms
   if (settingsDebounceTimer) {
     clearTimeout(settingsDebounceTimer);
   }
@@ -375,7 +457,110 @@ function onSettingsChange() {
   }, 500);
 }
 
+function onLanguageChange() {
+  const changed = setLocaleMode(dom.selectLanguage.value);
+  if (changed || !isApplyingLocale) {
+    showSuccess(__("msg.language_updated"));
+  }
+}
+
+function onLocaleChanged() {
+  isApplyingLocale = true;
+  applyLocaleToDom();
+  document.documentElement.lang = getLocaleMode() === "zh" ? "zh" : "en";
+  dom.selectLanguage.value = getLocaleMode();
+  updateThemeMenuState();
+  updateSettingsUI();
+  scheduleUiUpdate();
+  isApplyingLocale = false;
+}
+
+function onDocumentClick(event) {
+  if (activeMenu === "theme") {
+    const inTheme = dom.themeMenu.contains(event.target) || dom.btnThemeMenu.contains(event.target);
+    if (!inTheme) {
+      closeMenus();
+    }
+  }
+
+  if (activeMenu === "more") {
+    const inMore = dom.moreMenu.contains(event.target) || dom.btnMoreMenu.contains(event.target);
+    if (!inMore) {
+      closeMenus();
+    }
+  }
+}
+
+function onDocumentKeydown(event) {
+  if (event.key === "Escape") {
+    if (!dom.serviceLogModal.hidden) {
+      closeServiceLogModal();
+      return;
+    }
+    if (activeMenu) {
+      closeMenus();
+    }
+  }
+}
+
+function toggleMenu(menuName) {
+  if (activeMenu === menuName) {
+    closeMenus();
+    return;
+  }
+
+  closeMenus();
+  activeMenu = menuName;
+
+  const menu = menuName === "theme" ? dom.themeMenu : dom.moreMenu;
+  const button = menuName === "theme" ? dom.btnThemeMenu : dom.btnMoreMenu;
+  menu.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+}
+
+function closeMenus() {
+  activeMenu = null;
+  dom.themeMenu.hidden = true;
+  dom.moreMenu.hidden = true;
+  dom.btnThemeMenu.setAttribute("aria-expanded", "false");
+  dom.btnMoreMenu.setAttribute("aria-expanded", "false");
+}
+
+function updateThemeMenuState() {
+  for (const item of dom.themeMenuItems) {
+    const selected = item.dataset.themeOption === themeMode;
+    item.classList.toggle("is-selected", selected);
+    item.setAttribute("aria-checked", selected ? "true" : "false");
+  }
+}
+
+function openServiceLogModal() {
+  closeMenus();
+  lastFocusedElement = document.activeElement;
+  dom.serviceLogModal.hidden = false;
+  document.body.classList.add("modal-open");
+  dom.btnCloseServiceLog.focus();
+  refreshServiceLogs().catch((err) => {
+    console.warn("Could not refresh service logs:", err);
+  });
+}
+
+function closeServiceLogModal() {
+  dom.serviceLogModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
+    lastFocusedElement.focus();
+  }
+}
+
+function onModalBackdropClick(event) {
+  if (event.target === dom.serviceLogModal) {
+    closeServiceLogModal();
+  }
+}
+
 async function onChargeToFull() {
+  if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
     await invoke("charge_to_full");
@@ -385,10 +570,12 @@ async function onChargeToFull() {
     showError("Failed: " + formatError(err));
   } finally {
     setButtonsDisabled(false);
+    updateControlAvailability();
   }
 }
 
 async function onChargeToLimit() {
+  if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
     await invoke("charge_to_limit");
@@ -398,10 +585,12 @@ async function onChargeToLimit() {
     showError("Failed: " + formatError(err));
   } finally {
     setButtonsDisabled(false);
+    updateControlAvailability();
   }
 }
 
 async function onResetChargeMode() {
+  if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
     await invoke("reset_charge_mode");
@@ -411,10 +600,12 @@ async function onResetChargeMode() {
     showError("Failed: " + formatError(err));
   } finally {
     setButtonsDisabled(false);
+    updateControlAvailability();
   }
 }
 
 async function onDisableCharging() {
+  if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
     await invoke("disable_charging_cmd");
@@ -424,10 +615,12 @@ async function onDisableCharging() {
     showError("Failed: " + formatError(err));
   } finally {
     setButtonsDisabled(false);
+    updateControlAvailability();
   }
 }
 
 async function onToggleAdapter() {
+  if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
     if (state.powerDisabled) {
@@ -442,6 +635,7 @@ async function onToggleAdapter() {
     showError("Failed: " + formatError(err));
   } finally {
     setButtonsDisabled(false);
+    updateControlAvailability();
   }
 }
 
@@ -501,6 +695,7 @@ async function onRefreshDashboard() {
     dom.btnRefreshDashboard.disabled = true;
     dom.btnRefreshDashboard.classList.add("is-refreshing");
     await Promise.all([loadDashboardSnapshot(), refreshServiceLogs()]);
+    showSuccess(__("msg.refresh_complete"));
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -536,7 +731,6 @@ function scheduleUiUpdate() {
   });
 }
 
-// ---- Tauri Event Listener ----
 function setupEventListener() {
   listen("battery-state-changed", (event) => {
     if (event.payload) {
@@ -549,9 +743,7 @@ function setupEventListener() {
 
   listen("app-window-visibility-changed", async (event) => {
     const visible =
-      typeof event.payload === "boolean"
-        ? event.payload
-        : !!event.payload?.visible;
+      typeof event.payload === "boolean" ? event.payload : !!event.payload?.visible;
 
     windowVisible = visible;
     if (!visible) {
@@ -585,7 +777,6 @@ function setupEventListener() {
   });
 }
 
-// ---- Polling ----
 function stopPolling() {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -614,7 +805,6 @@ function startPolling() {
   }, 5000);
 }
 
-// ---- UI Update ----
 function updateUI() {
   updateBatteryDisplay();
   updateStatusBadges();
@@ -628,18 +818,18 @@ function updateUI() {
 
 function updateBatteryDisplay() {
   const pct = state.chargePercent ?? 0;
+  const adapterConnected = hasConnectedAdapter();
   const isActivelyCharging =
     state.isCharging &&
-    state.isPlugged &&
+    adapterConnected &&
     !state.powerDisabled &&
     !state.chargingDisabled;
   const isStandby =
-    state.isPlugged &&
+    adapterConnected &&
     !isActivelyCharging &&
     !state.powerDisabled &&
     !state.chargingDisabled;
 
-  // Battery fill level
   dom.batteryShell.style.setProperty("--fill-pct", pct + "%");
   dom.batteryPercent.textContent = pct + "%";
   dom.batteryFill.classList.toggle("charging", isActivelyCharging);
@@ -647,27 +837,16 @@ function updateBatteryDisplay() {
   dom.batteryFill.classList.toggle("standby", isStandby);
   dom.batteryShell.classList.toggle("standby", isStandby);
   dom.batteryShell.classList.toggle("disabled", !!state.powerDisabled || !!state.chargingDisabled);
+
   if (dom.batteryLevelCard) {
     dom.batteryLevelCard.classList.toggle("charging", isActivelyCharging);
     dom.batteryLevelCard.classList.toggle("standby", isStandby);
     dom.batteryLevelCard.classList.toggle("disabled", !!state.powerDisabled || !!state.chargingDisabled);
   }
 
-  // Battery color
-  dom.batteryFill.classList.remove(
-    "charge-low",
-    "charge-mid",
-    "charge-good",
-    "charge-full"
-  );
-  if (dom.batteryLevelCard) {
-    dom.batteryLevelCard.classList.remove(
-      "charge-low",
-      "charge-mid",
-      "charge-good",
-      "charge-full"
-    );
-  }
+  dom.batteryFill.classList.remove("charge-low", "charge-mid", "charge-good", "charge-full");
+  dom.batteryLevelCard?.classList.remove("charge-low", "charge-mid", "charge-good", "charge-full");
+
   if (pct <= 20) {
     dom.batteryFill.classList.add("charge-low");
     dom.batteryLevelCard?.classList.add("charge-low");
@@ -682,10 +861,8 @@ function updateBatteryDisplay() {
     dom.batteryLevelCard?.classList.add("charge-full");
   }
 
-  // Details
   dom.chargePercentDisplay.textContent = pct + "%";
 
-  // Charging state
   if (state.chargingDisabled) {
     dom.chargingStateDisplay.textContent = __("status.disabled");
     dom.chargingStateDisplay.style.color = "var(--accent-red)";
@@ -695,7 +872,7 @@ function updateBatteryDisplay() {
   } else if (state.isCharging) {
     dom.chargingStateDisplay.textContent = __("status.charging");
     dom.chargingStateDisplay.style.color = "var(--accent-green)";
-  } else if (state.isPlugged) {
+  } else if (adapterConnected) {
     dom.chargingStateDisplay.textContent = __("status.connected");
     dom.chargingStateDisplay.style.color = "var(--accent-green)";
   } else {
@@ -703,21 +880,19 @@ function updateBatteryDisplay() {
     dom.chargingStateDisplay.style.color = "var(--text-secondary)";
   }
 
-  // Adapter state
   dom.adapterStateDisplay.textContent = state.powerDisabled
     ? __("status.disabled")
-    : state.isPlugged
+    : adapterConnected
       ? __("status.connected")
-      : __("status.available");
+      : __("status.not_connected");
   dom.adapterStateDisplay.style.color = state.powerDisabled
     ? "var(--accent-red)"
-    : state.isPlugged
+    : adapterConnected
       ? "var(--accent-green)"
       : "var(--text-secondary)";
 }
 
 function updateStatusBadges() {
-  // Enabled/Disabled badge
   if (state.enabled) {
     dom.badgeEnabled.textContent = __("badge.enabled");
     dom.badgeEnabled.className = "badge badge-enabled";
@@ -726,24 +901,18 @@ function updateStatusBadges() {
     dom.badgeEnabled.className = "badge badge-disabled";
   }
 
-  // Mode badge
   const mode = state.mode || "Standard";
   const modeKey = "badge." + mode.toLowerCase();
   dom.badgeMode.textContent = __(modeKey);
-  if (mode === "ToFull") {
-    dom.badgeMode.className = "badge badge-mode-warn";
-  } else if (mode === "ToLimit") {
-    dom.badgeMode.className = "badge badge-mode";
-  } else {
-    dom.badgeMode.className = "badge badge-mode";
-  }
+  dom.badgeMode.className = mode === "ToFull" ? "badge badge-mode-warn" : "badge badge-mode";
 }
 
 function updateConnectionIndicator() {
   dom.indicatorDot.classList.remove("connected", "charging");
   let connectionLabel = __("status.disconnected");
+  const adapterConnected = hasConnectedAdapter();
 
-  if (state.isPlugged && !state.powerDisabled) {
+  if (adapterConnected && !state.powerDisabled) {
     if (state.isCharging && !state.chargingDisabled) {
       dom.indicatorDot.classList.add("charging");
       connectionLabel = __("status.charging");
@@ -751,15 +920,13 @@ function updateConnectionIndicator() {
       dom.indicatorDot.classList.add("connected");
       connectionLabel = __("status.connected");
     }
-  } else if (state.isPlugged) {
+  } else if (adapterConnected) {
     dom.indicatorDot.classList.add("connected");
     connectionLabel = __("status.connected");
   }
 
   dom.connectionText.textContent = connectionLabel;
-  if (dom.connectionStatusDisplay) {
-    dom.connectionStatusDisplay.textContent = connectionLabel;
-  }
+  dom.connectionStatusDisplay.textContent = connectionLabel;
 }
 
 function updateAdapterButton() {
@@ -800,29 +967,56 @@ function updateUnsupportedBanner() {
   dom.unsupportedBanner.style.display = shouldShow ? "flex" : "none";
 }
 
+function hasConnectedAdapter() {
+  return (
+    !!state.isPlugged ||
+    !!state.adapterConnected ||
+    !!state.realtimeAdapterConnected ||
+    !!state.chargerTelemetryConnected ||
+    !!state.isCharging
+  );
+}
+
+function canUseChargeActions() {
+  return hasConnectedAdapter() && state.controlAvailable && serviceState.controlAvailable;
+}
+
 function updateControlAvailability() {
   const available = state.controlAvailable && serviceState.controlAvailable;
+  const actionsAvailable = available && hasConnectedAdapter();
+
   dom.rootNotice.style.display = available ? "none" : "flex";
-  setButtonsDisabled(!available);
+  setButtonsDisabled(!actionsAvailable);
   dom.minChargeSlider.disabled = !available;
   dom.maxChargeSlider.disabled = !available;
   dom.toggleAdapterSleep.disabled = !available;
   dom.toggleMagSafeSync.disabled = !available;
+
+  if (!available) {
+    dom.actionHint.textContent = "";
+    dom.actionHint.className = "slider-validation action-hint";
+  } else if (!hasConnectedAdapter()) {
+    dom.actionHint.textContent = __("validation.adapter_required");
+    dom.actionHint.className = "slider-validation action-hint";
+  } else {
+    dom.actionHint.textContent = "";
+    dom.actionHint.className = "slider-validation action-hint";
+  }
 }
 
 function updateServiceCard() {
   const rawError = serviceState.lastError || state.lastError || "";
-  const showError = serviceState.running || !isExpectedServiceMissingError(rawError);
+  const shouldShowError = serviceState.running || !isExpectedServiceMissingError(rawError);
 
   dom.serviceInstalledValue.textContent = serviceState.installed ? __("service.yes") : __("service.no");
   dom.serviceRunningValue.textContent = serviceState.running ? __("service.yes") : __("service.no");
   dom.serviceControlValue.textContent = serviceState.controlAvailable
     ? __("service.available")
     : __("service.unavailable");
-  dom.serviceErrorText.textContent = showError ? rawError : "";
-  dom.serviceErrorText.className = showError && rawError
-    ? "slider-validation error"
-    : "slider-validation";
+  dom.serviceErrorText.textContent = shouldShowError ? rawError : "";
+  dom.serviceErrorText.className = shouldShowError && rawError
+    ? "slider-validation error service-summary"
+    : "slider-validation service-summary";
 
   dom.serviceIndicatorDot.classList.remove("connected", "charging");
   if (serviceState.controlAvailable) {
@@ -841,23 +1035,21 @@ function updateServiceCard() {
 }
 
 function updateSettingsUI() {
-  // Sliders
   dom.minChargeSlider.value = state.minCharge;
   dom.maxChargeSlider.value = state.maxCharge;
   dom.minChargeValue.textContent = state.minCharge + "%";
   dom.maxChargeValue.textContent = state.maxCharge + "%";
+  dom.selectLanguage.value = getLocaleMode();
 
   updateSliderFill(dom.minChargeSlider, dom.minChargeFill);
   updateSliderFill(dom.maxChargeSlider, dom.maxChargeFill);
 
-  // Toggles
   dom.toggleAdapterSleep.checked = state.adapterSleep;
   dom.toggleMagSafeSync.checked = state.magsafeSync;
 
   validateSliders();
 }
 
-// ---- Slider Helpers ----
 function updateSliderFill(slider, fillEl) {
   const min = parseInt(slider.min, 10);
   const max = parseInt(slider.max, 10);
@@ -881,7 +1073,6 @@ function validateSliders() {
   }
 }
 
-// ---- Button Helpers ----
 function setButtonsDisabled(disabled) {
   dom.btnChargeFull.disabled = disabled;
   dom.btnChargeLimit.disabled = disabled;
@@ -892,20 +1083,11 @@ function setButtonsDisabled(disabled) {
 
 function setServiceButtonsDisabled(disabled) {
   dom.btnInstallService.disabled = disabled;
-  dom.btnStartService.disabled = disabled;
-  dom.btnStopService.disabled = disabled;
+  dom.btnStartService.disabled = disabled || serviceState.running;
+  dom.btnStopService.disabled = disabled || !serviceState.running;
   dom.btnRefreshLogs.disabled = disabled;
 }
 
-function disableControls() {
-  setButtonsDisabled(true);
-  dom.minChargeSlider.disabled = true;
-  dom.maxChargeSlider.disabled = true;
-  dom.toggleAdapterSleep.disabled = true;
-  dom.toggleMagSafeSync.disabled = true;
-}
-
-// ---- Toast / Message Helpers ----
 function showError(message) {
   if (toastTimer) clearTimeout(toastTimer);
   dom.successToast.classList.remove("visible");
@@ -942,7 +1124,6 @@ function clearValidation() {
 
 function hideLoading() {
   dom.loadingOverlay.classList.add("hidden");
-  // Remove from DOM after transition
   setTimeout(() => {
     if (dom.loadingOverlay.parentNode) {
       dom.loadingOverlay.style.display = "none";
