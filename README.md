@@ -145,6 +145,12 @@ Create release artifacts:
 
 Artifacts are written to `release-artifacts/`.
 
+Create and publish a full GitHub release:
+
+```bash
+./scripts/release.sh 0.0.2
+```
+
 ## Installation Notes
 
 This app is currently not notarized. On a clean macOS machine, Gatekeeper may block it on first launch.

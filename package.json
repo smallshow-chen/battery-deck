@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "tauri": "tauri",
-    "build:release": "./scripts/package-release.sh"
+    "build:release": "./scripts/package-release.sh",
+    "release": "./scripts/release.sh"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

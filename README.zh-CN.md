@@ -61,6 +61,12 @@ npm install
 
 产物会写入 `release-artifacts/`。
 
+一键创建并发布 GitHub 版本：
+
+```bash
+./scripts/release.sh 0.0.2
+```
+
 ## 说明
 
 - Apple Silicon only
