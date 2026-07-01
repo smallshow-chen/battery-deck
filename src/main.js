@@ -164,6 +164,7 @@ function cacheDom() {
   dom.selectLanguage = document.getElementById("select-language");
   dom.toggleAdapterSleep = document.getElementById("toggle-adapter-sleep");
   dom.toggleMagSafeSync = document.getElementById("toggle-magsafe-sync");
+  dom.toggleAutoLaunch = document.getElementById("toggle-auto-launch");
 
   dom.unsupportedBanner = document.getElementById("unsupported-banner");
   dom.rootNotice = document.getElementById("root-notice");
@@ -213,6 +214,7 @@ async function initialize() {
       refreshServiceLogs(),
       refreshUpdateStatus(),
       refreshHelperUpdateStatus(),
+      refreshAutoLaunchState(),
     ]);
     startPolling();
     setupEventListener();
@@ -495,6 +497,7 @@ function bindEvents() {
   dom.selectLanguage.addEventListener("change", onLanguageChange);
   dom.toggleAdapterSleep.addEventListener("change", onSettingsChange);
   dom.toggleMagSafeSync.addEventListener("change", onSettingsChange);
+  dom.toggleAutoLaunch?.addEventListener("change", onAutoLaunchChange);
 
   dom.errorClose.addEventListener("click", () => {
     dom.errorToast.classList.remove("visible");
@@ -537,6 +540,34 @@ function onLanguageChange() {
   const changed = setLocaleMode(dom.selectLanguage.value);
   if (changed || !isApplyingLocale) {
     showSuccess(__("msg.language_updated"));
+  }
+}
+
+async function onAutoLaunchChange() {
+  if (!dom.toggleAutoLaunch) return;
+  const enable = dom.toggleAutoLaunch.checked;
+  try {
+    const autostart = window.__TAURI__["autostart"];
+    if (enable) {
+      await autostart.enable();
+    } else {
+      await autostart.disable();
+    }
+    showSuccess(enable ? __("msg.auto_launch_enabled") : __("msg.auto_launch_disabled"));
+  } catch (err) {
+    dom.toggleAutoLaunch.checked = !enable;
+    showError("Auto-launch: " + formatError(err));
+  }
+}
+
+async function refreshAutoLaunchState() {
+  if (!dom.toggleAutoLaunch) return;
+  try {
+    const autostart = window.__TAURI__["autostart"];
+    const enabled = await autostart.isEnabled();
+    dom.toggleAutoLaunch.checked = enabled;
+  } catch (err) {
+    console.warn("Could not read auto-launch state:", err);
   }
 }
 
@@ -788,6 +819,7 @@ async function onRefreshDashboard() {
       refreshServiceLogs(),
       refreshUpdateStatus(),
       refreshHelperUpdateStatus(),
+      refreshAutoLaunchState(),
     ]);
     showSuccess(__("msg.refresh_complete"));
   } catch (err) {

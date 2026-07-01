@@ -11,6 +11,7 @@
     "core:window:allow-set-focus",
     "core:event:default",
     "opener:default",
-    "updater:default"
+    "updater:default",
+    "autostart:default"
   ]
 }

@@ -429,6 +429,19 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
   gap: 6px;
 }
 
+.menu-section-autostart {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-direction: row;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.toggle-switch-menu {
+  flex: 0 0 auto;
+}
+
 .menu-update-actions {
   display: flex;
   gap: 6px;

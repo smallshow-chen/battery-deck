@@ -78,6 +78,7 @@ const TRANSLATIONS = {
     "setting.magsafe_sync": "Sync MagSafe LED",
     "setting.magsafe_sync_desc":
       "Synchronize the MagSafe LED indicator with charging state",
+    "setting.auto_launch": "Launch at Login",
     "setting.language": "Language",
     "setting.language_desc":
       "Choose the dashboard language or follow the system preference",
@@ -148,6 +149,8 @@ const TRANSLATIONS = {
     "msg.theme_updated": "Theme updated",
     "msg.refresh_complete": "Dashboard refreshed",
     "msg.logs_cleared": "Logs cleared",
+    "msg.auto_launch_enabled": "Launch at Login enabled",
+    "msg.auto_launch_disabled": "Launch at Login disabled",
     "validation.min_exceeds_max":
       "Min charge (%{min}%) exceeds max charge (%{max}%)",
     "validation.min_at_least": "Min charge must be at least 20%",
@@ -230,6 +233,7 @@ const TRANSLATIONS = {
     "setting.adapter_sleep_desc": "当电源适配器被禁用时，阻止系统进入睡眠状态",
     "setting.magsafe_sync": "同步 MagSafe 指示灯",
     "setting.magsafe_sync_desc": "将 MagSafe 指示灯与充电状态同步",
+    "setting.auto_launch": "开机自启",
     "setting.language": "语言",
     "setting.language_desc": "选择界面语言，或默认跟随系统偏好",
     "setting.theme": "主题",
@@ -299,6 +303,8 @@ const TRANSLATIONS = {
     "msg.theme_updated": "主题已更新",
     "msg.refresh_complete": "面板已刷新",
     "msg.logs_cleared": "日志已清理",
+    "msg.auto_launch_enabled": "已开启开机自启",
+    "msg.auto_launch_disabled": "已关闭开机自启",
     "validation.min_exceeds_max": "最低电量（%{min}%）不能超过最高电量（%{max}%）",
     "validation.min_at_least": "最低电量不能低于 20%",
     "validation.max_at_least": "最高电量不能低于 50%",
