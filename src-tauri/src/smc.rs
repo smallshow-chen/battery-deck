@@ -312,7 +312,11 @@ fn smc_read_key(connect: u32, key: &[u8; 4]) -> io::Result<(Vec<u8>, SMCKeyInfoD
     Ok((data, key_info))
 }
 
+/// Keys that are write-only or may not reflect the written value on immediate read-back.
+const WRITE_ONLY_KEYS: &[[u8; 4]] = &[*keys::CHTE, *keys::ACLC];
+
 /// Write data to an SMC key, then verify by reading back.
+/// Verification is skipped for known write-only keys.
 #[cfg(target_os = "macos")]
 fn smc_write_key(connect: u32, key: &[u8; 4], data: &[u8]) -> io::Result<()> {
     let key_info = smc_get_key_info(connect, key)?;
@@ -339,16 +343,18 @@ fn smc_write_key(connect: u32, key: &[u8; 4], data: &[u8]) -> io::Result<()> {
         ));
     }
 
-    // Verify write by reading back
-    let (read_data, _) = smc_read_key(connect, key)?;
-    if read_data.len() != data.len() || read_data[..] != *data {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!(
-                "SMC WriteKey {:?} verification failed: wrote {:?}, read {:?}",
-                key, data, read_data
-            ),
-        ));
+    let skip_verify = WRITE_ONLY_KEYS.iter().any(|k| k == key);
+    if !skip_verify {
+        let (read_data, _) = smc_read_key(connect, key)?;
+        if read_data.len() != data.len() || read_data[..] != *data {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "SMC WriteKey {:?} verification failed: wrote {:?}, read {:?}",
+                    key, data, read_data
+                ),
+            ));
+        }
     }
 
     Ok(())

@@ -851,6 +851,7 @@ async function onInstallUpdate() {
     updateUpdateCard();
   } catch (err) {
     showError("Failed: " + formatError(err));
+  } finally {
     setUpdateButtonsDisabled(false);
   }
 }

@@ -11,6 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+const CLIENT_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RESPONSE_SIZE: usize = 4 * 1024 * 1024;
+
 const SERVICE_LABEL: &str = "com.smallshow.battery-toolkit-helper";
 
 #[derive(Serialize, Clone)]
@@ -503,22 +507,26 @@ pub fn stop_service() -> Result<(), String> {
     }
 
     if let Some(pid) = helper::helper_pid() {
-        let status = Command::new("kill")
-            .args(["-TERM", &pid.to_string()])
-            .status()
-            .map_err(|e| e.to_string())?;
-        if !status.success() {
-            errors.push("Failed to terminate helper service".to_string());
+        if !is_helper_process(pid) {
+            let _ = fs::remove_file(helper::helper_pid_path());
         } else {
-            for _ in 0..20 {
-                if Command::new("kill")
-                    .args(["-0", &pid.to_string()])
-                    .status()
-                    .map_or(false, |s| !s.success())
-                {
-                    break;
+            let status = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status()
+                .map_err(|e| e.to_string())?;
+            if !status.success() {
+                errors.push("Failed to terminate helper service".to_string());
+            } else {
+                for _ in 0..20 {
+                    if Command::new("kill")
+                        .args(["-0", &pid.to_string()])
+                        .status()
+                        .map_or(false, |s| !s.success())
+                    {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
                 }
-                std::thread::sleep(std::time::Duration::from_millis(250));
             }
         }
     }
@@ -582,9 +590,29 @@ pub fn clear_logs() -> Result<(), String> {
     helper::clear_helper_logs()
 }
 
+fn is_helper_process(pid: u32) -> bool {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output();
+    match output {
+        Ok(out) => {
+            let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            name.contains("battery-helper")
+        }
+        Err(_) => false,
+    }
+}
+
 fn request<T: DeserializeOwned>(command: &str, payload: Value) -> Result<T, String> {
     let socket_path = helper::socket_path();
-    let mut stream = UnixStream::connect(socket_path).map_err(|e| e.to_string())?;
+    let mut stream = UnixStream::connect(&socket_path).map_err(|e| e.to_string())?;
+    stream
+        .set_read_timeout(Some(CLIENT_READ_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(Some(CLIENT_WRITE_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+
     let req = Request {
         id: next_id(),
         command: command.to_string(),
@@ -597,7 +625,13 @@ fn request<T: DeserializeOwned>(command: &str, payload: Value) -> Result<T, Stri
         .map_err(|e| e.to_string())?;
 
     let mut raw = String::new();
-    stream.read_to_string(&mut raw).map_err(|e| e.to_string())?;
+    stream
+        .take(MAX_RESPONSE_SIZE as u64)
+        .read_to_string(&mut raw)
+        .map_err(|e| e.to_string())?;
+    if raw.len() >= MAX_RESPONSE_SIZE {
+        return Err("Helper response too large".to_string());
+    }
     let response: Response = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     if !response.ok {
         return Err(response

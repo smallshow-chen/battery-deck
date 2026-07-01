@@ -8,15 +8,71 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_REQUEST_SIZE: usize = 64 * 1024;
+
+fn set_socket_timeouts(stream: &UnixStream) -> Result<(), String> {
+    stream
+        .set_read_timeout(Some(SOCKET_READ_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+    stream
+        .set_write_timeout(Some(SOCKET_WRITE_TIMEOUT))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn peer_uid(stream: &UnixStream) -> Result<u32, String> {
+    let fd = stream.as_raw_fd();
+    let mut uid: libc::uid_t = 0;
+    let mut gid: libc::gid_t = 0;
+    let result = unsafe { libc::getpeereid(fd, &mut uid, &mut gid) };
+    if result != 0 {
+        return Err(format!(
+            "getpeereid failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    Ok(uid)
+}
+
+static EFFECTIVE_UID: AtomicU32 = AtomicU32::new(u32::MAX);
+
+fn get_effective_uid() -> u32 {
+    let uid = EFFECTIVE_UID.load(AtomicOrdering::Relaxed);
+    if uid != u32::MAX {
+        return uid;
+    }
+    let uid = unsafe { libc::geteuid() };
+    EFFECTIVE_UID.store(uid, AtomicOrdering::Relaxed);
+    uid
+}
+
+fn check_peer_access(stream: &UnixStream) -> Result<(), String> {
+    let peer = peer_uid(stream)?;
+    let owner = get_effective_uid();
+    if peer != 0 && peer != owner {
+        return Err(format!(
+            "Access denied: peer uid {} != owner uid {}",
+            peer, owner
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Clone)]
 struct SharedState {
     smc: Arc<Mutex<Option<SmcHandle>>>,
     data: Arc<Mutex<HelperState>>,
+    last_battery_percent: Arc<Mutex<Option<u8>>>,
+    last_is_plugged: Arc<Mutex<bool>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -93,7 +149,7 @@ fn config_dir() -> PathBuf {
 fn shared_runtime_dir() -> PathBuf {
     let path = PathBuf::from(SHARED_RUNTIME_DIR);
     if fs::create_dir_all(&path).is_ok() {
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o750));
     }
     path
 }
@@ -399,7 +455,22 @@ fn update_mode(shared: &SharedState, mode: ChargeMode) -> Result<HelperState, St
 }
 
 fn evaluate(shared: &SharedState) -> Result<(), String> {
-    let percent = get_battery_percent();
+    let percent = {
+        let cached = shared
+            .last_battery_percent
+            .lock()
+            .map_err(|e| e.to_string())?;
+        if let Some(p) = *cached {
+            p
+        } else {
+            drop(cached);
+            let p = get_battery_percent();
+            if let Ok(mut c) = shared.last_battery_percent.lock() {
+                *c = Some(p);
+            }
+            p
+        }
+    };
     let snapshot = current_state(shared)?;
     let disable = match snapshot.mode {
         ChargeMode::Standard => {
@@ -497,11 +568,18 @@ fn handle_request(shared: &SharedState, request: Request) -> Response {
 }
 
 fn handle_stream(shared: &SharedState, stream: UnixStream) -> Result<(), String> {
-    let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
+    set_socket_timeouts(&stream)?;
+    check_peer_access(&stream)?;
+
+    let reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
     let mut input = String::new();
-    reader
+    let mut limited = reader.take(MAX_REQUEST_SIZE as u64);
+    limited
         .read_to_string(&mut input)
         .map_err(|e| e.to_string())?;
+    if input.len() >= MAX_REQUEST_SIZE {
+        return Err("Request too large".to_string());
+    }
     let request: Request = serde_json::from_str(&input).map_err(|e| e.to_string())?;
     let response = handle_request(shared, request);
     let mut writer = stream;
@@ -510,7 +588,11 @@ fn handle_stream(shared: &SharedState, stream: UnixStream) -> Result<(), String>
 }
 
 fn polling_interval(shared: &SharedState) -> Duration {
-    if crate::battery::get_is_plugged() {
+    let is_plugged = *shared
+        .last_is_plugged
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if is_plugged {
         Duration::from_secs(5)
     } else {
         let state = current_state(shared).ok();
@@ -586,6 +668,8 @@ pub fn run_daemon() -> Result<(), String> {
     ensure_parent(&socket)?;
     write_pid()?;
 
+    let _ = get_effective_uid();
+
     let smc_handle = match SmcHandle::open() {
         Ok(handle) => Some(handle),
         Err(error) => {
@@ -602,9 +686,14 @@ pub fn run_daemon() -> Result<(), String> {
     state.supported = supported;
     state.control_available = supported && smc_handle.is_some();
 
+    let is_plugged = crate::battery::get_is_plugged();
+    let battery_percent = get_battery_percent();
+
     let shared = SharedState {
         smc: Arc::new(Mutex::new(smc_handle)),
         data: Arc::new(Mutex::new(state)),
+        last_battery_percent: Arc::new(Mutex::new(Some(battery_percent))),
+        last_is_plugged: Arc::new(Mutex::new(is_plugged)),
     };
 
     if let Ok(snapshot) = current_state(&shared) {
@@ -613,6 +702,14 @@ pub fn run_daemon() -> Result<(), String> {
 
     let poll_shared = shared.clone();
     std::thread::spawn(move || loop {
+        let plugged = crate::battery::get_is_plugged();
+        let percent = get_battery_percent();
+        if let Ok(mut c) = poll_shared.last_is_plugged.lock() {
+            *c = plugged;
+        }
+        if let Ok(mut c) = poll_shared.last_battery_percent.lock() {
+            *c = Some(percent);
+        }
         if let Err(error) = evaluate(&poll_shared) {
             set_error(&poll_shared, error);
         }
@@ -626,9 +723,12 @@ pub fn run_daemon() -> Result<(), String> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(error) = handle_stream(&shared, stream) {
-                    set_error(&shared, error);
-                }
+                let shared = shared.clone();
+                std::thread::spawn(move || {
+                    if let Err(error) = handle_stream(&shared, stream) {
+                        set_error(&shared, format!("connection error: {}", error));
+                    }
+                });
             }
             Err(error) => set_error(&shared, error.to_string()),
         }

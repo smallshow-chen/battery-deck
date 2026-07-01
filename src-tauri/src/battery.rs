@@ -422,14 +422,16 @@ fn probe_charger_profile() -> (String, u32) {
 
 #[cfg(target_os = "macos")]
 fn cached_battery_ioreg(cache: &BatteryCache) -> Option<String> {
-    let mut inner = cache.inner.lock().ok()?;
+    let inner = cache.inner.lock().ok()?;
     if let (Some(at), Some(data)) = (inner.battery_ioreg_at, inner.battery_ioreg_data.as_ref()) {
         if at.elapsed() < BATTERY_DATA_TTL {
             return Some(data.clone());
         }
     }
 
+    drop(inner);
     let data = probe_battery_ioreg()?;
+    let mut inner = cache.inner.lock().ok()?;
     inner.battery_ioreg_at = Some(Instant::now());
     inner.battery_ioreg_data = Some(data.clone());
     Some(data)
@@ -437,14 +439,16 @@ fn cached_battery_ioreg(cache: &BatteryCache) -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn cached_pmset(cache: &BatteryCache) -> Option<String> {
-    let mut inner = cache.inner.lock().ok()?;
+    let inner = cache.inner.lock().ok()?;
     if let (Some(at), Some(data)) = (inner.pmset_at, inner.pmset_data.as_ref()) {
         if at.elapsed() < BATTERY_DATA_TTL {
             return Some(data.clone());
         }
     }
 
+    drop(inner);
     let data = probe_pmset()?;
+    let mut inner = cache.inner.lock().ok()?;
     inner.pmset_at = Some(Instant::now());
     inner.pmset_data = Some(data.clone());
     Some(data)

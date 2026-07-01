@@ -29,6 +29,8 @@ const EVENT_WINDOW_VISIBILITY_CHANGED: &str = "app-window-visibility-changed";
 const EVENT_WINDOW_REFRESH_REQUESTED: &str = "app-state-refresh-requested";
 const EVENT_TRAY_ACTION_ERROR: &str = "tray-action-error";
 
+const HELPER_STATE_TTL: std::time::Duration = std::time::Duration::from_secs(1);
+
 const MENU_SHOW_WINDOW: &str = "tray.show_window";
 const MENU_CHARGE_FULL: &str = "tray.charge_full";
 const MENU_CHARGE_LIMIT: &str = "tray.charge_limit";
@@ -46,7 +48,7 @@ fn restore_app_icon(app: &AppHandle) -> Result<(), String> {
     use objc2_app_kit::{NSApplication, NSImage};
     use objc2_foundation::NSData;
 
-    let icon_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.png");
+    let icon_path = icon_resource_path(app)?;
     let icon_bytes = std::fs::read(&icon_path).map_err(|e| e.to_string())?;
 
     app.run_on_main_thread(move || {
@@ -67,11 +69,17 @@ fn restore_app_icon(_: &AppHandle) -> Result<(), String> {
 
 struct AppCache(BatteryCache);
 
+struct HelperStateCache {
+    state: Option<battery::HelperState>,
+    fetched_at: Option<std::time::Instant>,
+}
+
 struct AppState {
     window_visible: AtomicBool,
     quitting: AtomicBool,
     tray: Mutex<Option<TrayMenuHandles>>,
     cache: AppCache,
+    helper_cache: Mutex<HelperStateCache>,
 }
 
 impl Default for AppState {
@@ -81,8 +89,33 @@ impl Default for AppState {
             quitting: AtomicBool::new(false),
             tray: Mutex::new(None),
             cache: AppCache(BatteryCache::new()),
+            helper_cache: Mutex::new(HelperStateCache {
+                state: None,
+                fetched_at: None,
+            }),
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn icon_resource_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    if let Some(resource_dir) = app.path().resource_dir().ok() {
+        let candidate = resource_dir.join("icons/icon.png");
+        if candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    let fallback = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.png");
+    if fallback.exists() {
+        Ok(fallback)
+    } else {
+        Err("icon.png not found in resource dir or CARGO_MANIFEST_DIR".to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn icon_resource_path(_app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.png"))
 }
 
 #[derive(Clone)]
@@ -104,6 +137,12 @@ struct TrayMenuHandles {
 #[derive(Clone, Serialize)]
 struct TrayActionErrorPayload {
     message: String,
+}
+
+fn invalidate_helper_cache(app: &AppHandle) {
+    if let Ok(mut cache) = app.state::<AppState>().helper_cache.lock() {
+        cache.fetched_at = None;
+    }
 }
 
 fn fallback_helper_state(error: Option<String>) -> battery::HelperState {
@@ -144,8 +183,24 @@ fn build_battery_state_with_cache(
     }
 }
 
-fn build_dashboard_snapshot(app: &AppHandle) -> DashboardSnapshot {
-    let cache = &app.state::<AppState>().cache.0;
+fn cached_helper_state(
+    app: &AppHandle,
+    force_refresh: bool,
+) -> (Result<battery::HelperState, String>, Option<String>) {
+    let state = app.state::<AppState>();
+    let mut guard = state.helper_cache.lock().map_err(|e| e.to_string());
+
+    if !force_refresh {
+        if let Ok(ref mut cache) = guard {
+            if let (Some(state), Some(at)) = (&cache.state, cache.fetched_at) {
+                if at.elapsed() < HELPER_STATE_TTL {
+                    let cloned = state.clone();
+                    return (Ok(cloned), None);
+                }
+            }
+        }
+    }
+
     let helper_result = service::helper_state();
     let helper_error = helper_result.as_ref().err().cloned();
     let helper_state = helper_result
@@ -154,9 +209,29 @@ fn build_dashboard_snapshot(app: &AppHandle) -> DashboardSnapshot {
         .cloned()
         .unwrap_or_else(|| fallback_helper_state(helper_error.clone()));
 
+    if let Ok(ref mut cache) = guard {
+        cache.state = Some(helper_state.clone());
+        cache.fetched_at = Some(std::time::Instant::now());
+    }
+
+    (Ok(helper_state), helper_error)
+}
+
+fn build_dashboard_snapshot(app: &AppHandle) -> DashboardSnapshot {
+    let cache = &app.state::<AppState>().cache.0;
+    let (helper_result, helper_error) = cached_helper_state(app, false);
+    let helper_state = helper_result.unwrap_or_else(|e| fallback_helper_state(Some(e)));
+
     DashboardSnapshot {
         battery_state: build_battery_state_with_cache(cache, &helper_state),
-        service_status: service::derive_service_status(helper_result.as_ref().ok(), helper_error),
+        service_status: service::derive_service_status(
+            if helper_error.is_none() {
+                Some(&helper_state)
+            } else {
+                None
+            },
+            helper_error,
+        ),
         battery_health: battery::get_battery_health_cached(cache),
         battery_realtime: battery::get_battery_realtime_cached(cache),
         charger_info: battery::get_charger_info_cached(cache),
@@ -579,6 +654,11 @@ fn perform_set_settings(
     Ok(())
 }
 
+fn invalidate_helper_cache_and_refresh_tray(app: &AppHandle) -> Result<(), String> {
+    invalidate_helper_cache(app);
+    refresh_tray_menu(app)
+}
+
 fn perform_charge_to_full() -> Result<(), String> {
     let _: battery::HelperState = service::send_command("charge_to_full", Value::Null)?;
     Ok(())
@@ -632,7 +712,7 @@ fn perform_stop_service() -> Result<(), String> {
 
 fn perform_upgrade_helper(app: &AppHandle) -> Result<ServiceStatus, String> {
     let status = service::upgrade_helper()?;
-    let _ = refresh_tray_menu(app);
+    let _ = invalidate_helper_cache_and_refresh_tray(app);
     Ok(status)
 }
 
@@ -656,42 +736,42 @@ fn set_settings(
     magsafe_sync: bool,
 ) -> Result<(), String> {
     perform_set_settings(min_charge, max_charge, adapter_sleep, magsafe_sync)?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn charge_to_full(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_charge_to_full()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn charge_to_limit(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_charge_to_limit()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn disable_charging_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_disable_charging()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn disable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_disable_adapter()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
 #[tauri::command]
 fn enable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_enable_adapter()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
@@ -708,21 +788,21 @@ fn get_service_status(_: State<AppState>) -> Result<ServiceStatus, String> {
 #[tauri::command]
 fn install_service(app: AppHandle, _: State<AppState>) -> Result<ServiceStatus, String> {
     service::install_service()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     service::get_service_status()
 }
 
 #[tauri::command]
 fn start_service(app: AppHandle, _: State<AppState>) -> Result<ServiceStatus, String> {
     let status = service::start_service()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(status)
 }
 
 #[tauri::command]
 fn stop_service(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     service::stop_service()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
@@ -775,7 +855,7 @@ fn get_dashboard_snapshot(app: AppHandle, _: State<AppState>) -> Result<Dashboar
 #[tauri::command]
 fn reset_charge_mode(app: AppHandle, _: State<AppState>) -> Result<(), String> {
     perform_reset_charge_mode()?;
-    let _ = refresh_tray_menu(&app);
+    let _ = invalidate_helper_cache_and_refresh_tray(&app);
     Ok(())
 }
 
