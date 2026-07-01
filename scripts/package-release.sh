@@ -45,8 +45,8 @@ HELPER_PATH="$TAURI_DIR/target/release/battery-helper"
 APP_HELPER_PATH="$APP_PATH/Contents/MacOS/battery-helper"
 ZIP_PATH="$RELEASE_DIR/${PRODUCT_NAME}_${VERSION}_${ARCH}.zip"
 DMG_PATH="$RELEASE_DIR/${PRODUCT_NAME}_${VERSION}_${ARCH}.dmg"
-UPDATER_BUNDLE_PATH="$TAURI_DIR/target/release/bundle/macos/${MAIN_BINARY_NAME}.app.tar.gz"
-UPDATER_SIG_PATH="$TAURI_DIR/target/release/bundle/macos/${MAIN_BINARY_NAME}.app.tar.gz.sig"
+UPDATER_BUNDLE_PATH="$TAURI_DIR/target/release/bundle/macos/${PRODUCT_NAME}.app.tar.gz"
+UPDATER_SIG_PATH="$TAURI_DIR/target/release/bundle/macos/${PRODUCT_NAME}.app.tar.gz.sig"
 UPDATER_RELEASE_PATH="$RELEASE_DIR/${PRODUCT_NAME}_${VERSION}_${ARCH}.app.tar.gz"
 UPDATER_SIG_RELEASE_PATH="$RELEASE_DIR/${PRODUCT_NAME}_${VERSION}_${ARCH}.app.tar.gz.sig"
 LATEST_JSON_PATH="$RELEASE_DIR/latest.json"
@@ -54,8 +54,12 @@ UPDATER_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/v${
 UPDATER_SIGNATURE=""
 BUILD_UPDATER_ARTIFACTS=0
 
-if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" || -n "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
   BUILD_UPDATER_ARTIFACTS=1
+  if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -n "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
+    TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_SIGNING_PRIVATE_KEY_PATH")"
+    export TAURI_SIGNING_PRIVATE_KEY
+  fi
 fi
 
 mkdir -p "$RELEASE_DIR"
