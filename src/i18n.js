@@ -96,6 +96,8 @@ const TRANSLATIONS = {
     "menu.placeholder_repo": "https://github.com/smallshow-chen/battery-deck",
     "menu.author_email": "QQ Mail: 2413067063@qq.com",
     "menu.version": "Version",
+    "menu.helper_version": "Helper Version",
+    "menu.helper_version_tooltip": "Bundled: v%{bundled}  |  Installed: v%{installed}",
     "menu.check_updates_desc": "Ready to check for updates.",
     "update.status.idle": "Ready to check for updates.",
     "update.status.checking": "Checking for updates...",
@@ -104,6 +106,7 @@ const TRANSLATIONS = {
     "update.status.downloading": "Downloading update...",
     "update.status.ready": "Update downloaded. Installation will restart the app.",
     "update.status.unconfigured": "Updater is not configured yet.",
+    "update.status.unavailable": "Update service is temporarily unavailable.",
     "update.helper_badge": "Helper Upgrade",
     "update.helper_needed": "Bundled helper v%{bundled} is newer than installed helper v%{installed}.",
     "update.helper_missing": "Bundled helper v%{bundled} is available and the root helper is not installed yet.",
@@ -244,6 +247,8 @@ const TRANSLATIONS = {
     "menu.placeholder_repo": "https://github.com/smallshow-chen/battery-deck",
     "menu.author_email": "QQ 邮箱：2413067063@qq.com",
     "menu.version": "版本",
+    "menu.helper_version": "Helper 版本",
+    "menu.helper_version_tooltip": "内置：v%{bundled}  |  已安装：v%{installed}",
     "menu.check_updates_desc": "可随时检查新版本。",
     "update.status.idle": "可随时检查新版本。",
     "update.status.checking": "正在检查更新...",
@@ -252,6 +257,7 @@ const TRANSLATIONS = {
     "update.status.downloading": "正在下载更新...",
     "update.status.ready": "更新已下载，安装时会重启应用。",
     "update.status.unconfigured": "更新服务尚未配置。",
+    "update.status.unavailable": "更新服务暂时不可用。",
     "update.helper_badge": "Helper 升级",
     "update.helper_needed": "内置 helper v%{bundled} 高于已安装 helper v%{installed}。",
     "update.helper_missing": "内置 helper v%{bundled} 已可用，但当前尚未安装 root helper。",
@@ -348,7 +354,7 @@ function t(key, params) {
   let str = getDictionary()[key] ?? TRANSLATIONS.en[key] ?? key;
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      str = str.replace("%{" + k + "}", v);
+      str = str.replaceAll("%{" + k + "}", v);
     }
   }
   return str;

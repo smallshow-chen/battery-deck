@@ -53,14 +53,18 @@ fn config_is_ready(app: &AppHandle) -> bool {
     !pubkey.is_empty() && has_endpoints
 }
 
-pub fn initialize(app: &AppHandle) {
+pub fn initialize(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<UpdateState>();
-    let mut status = state.inner.lock().unwrap();
+    let mut status = state.inner.lock().map_err(|e| e.to_string())?;
     status.current_version = app.package_info().version.to_string();
     status.configured = config_is_ready(app);
+    Ok(())
 }
 
-fn set_status(app: &AppHandle, update: impl FnOnce(&mut UpdateStatus)) -> Result<UpdateStatus, String> {
+fn set_status(
+    app: &AppHandle,
+    update: impl FnOnce(&mut UpdateStatus),
+) -> Result<UpdateStatus, String> {
     let snapshot = {
         let state = app.state::<UpdateState>();
         let mut status = state.inner.lock().map_err(|e| e.to_string())?;
@@ -106,9 +110,15 @@ pub async fn check(app: AppHandle, startup: bool) -> Result<UpdateStatus, String
         });
     }
 
-    let updater = app.updater().map_err(|e| e.to_string())?;
-    match updater.check().await.map_err(|e| e.to_string())? {
-        Some(update) => {
+    let updater = app.updater().map_err(|e| {
+        let _ = set_status(&app, |status| {
+            status.checking = false;
+            status.error = Some("update.status.unavailable".to_string());
+        });
+        e.to_string()
+    })?;
+    match updater.check().await {
+        Ok(Some(update)) => {
             let latest_version = update.version.clone();
             let notes = update.body.clone();
             let published_at = update.date.map(|date| date.to_string());
@@ -122,7 +132,7 @@ pub async fn check(app: AppHandle, startup: bool) -> Result<UpdateStatus, String
                 status.error = None;
             })
         }
-        None => set_status(&app, |status| {
+        Ok(None) => set_status(&app, |status| {
             status.checking = false;
             status.update_available = false;
             status.latest_version = None;
@@ -130,6 +140,11 @@ pub async fn check(app: AppHandle, startup: bool) -> Result<UpdateStatus, String
             status.published_at = None;
             status.startup_badge_visible = false;
             status.error = None;
+        }),
+        Err(_) => set_status(&app, |status| {
+            status.checking = false;
+            status.update_available = false;
+            status.error = Some("update.status.unavailable".to_string());
         }),
     }
 }

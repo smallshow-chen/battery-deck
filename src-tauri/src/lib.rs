@@ -543,7 +543,10 @@ fn setup_tray(app: &AppHandle) -> Result<(), String> {
     }
 
     builder.build(app).map_err(|e| e.to_string())?;
-    *app.state::<AppState>().tray.lock().unwrap() = Some(handles);
+    *app.state::<AppState>()
+        .tray
+        .lock()
+        .map_err(|e| e.to_string())? = Some(handles);
     refresh_tray_menu(app)?;
     Ok(())
 }
@@ -800,7 +803,10 @@ fn clear_update_badge(app: AppHandle, _: State<AppState>) -> Result<UpdateStatus
 }
 
 #[tauri::command]
-fn get_helper_version_status(app: AppHandle, _: State<AppState>) -> Result<service::HelperVersionStatus, String> {
+fn get_helper_version_status(
+    app: AppHandle,
+    _: State<AppState>,
+) -> Result<service::HelperVersionStatus, String> {
     let _ = app;
     service::helper_version_status()
 }
@@ -863,7 +869,7 @@ pub fn run() {
         .manage(UpdateState::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
-            update::initialize(&app_handle);
+            update::initialize(&app_handle).ok();
             setup_tray(&app_handle)?;
             attach_window_handlers(&app_handle)?;
             spawn_battery_poll(app_handle.clone());

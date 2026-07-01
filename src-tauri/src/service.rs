@@ -263,14 +263,7 @@ fn launchctl_bootout_user() -> Result<(), String> {
 }
 
 fn uid_string() -> String {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "0".to_string())
+    unsafe { libc::getuid().to_string() }
 }
 
 fn temp_artifact(name: &str, contents: &str) -> Result<PathBuf, String> {
@@ -516,6 +509,17 @@ pub fn stop_service() -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         if !status.success() {
             errors.push("Failed to terminate helper service".to_string());
+        } else {
+            for _ in 0..20 {
+                if Command::new("kill")
+                    .args(["-0", &pid.to_string()])
+                    .status()
+                    .map_or(false, |s| !s.success())
+                {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
         }
     }
 

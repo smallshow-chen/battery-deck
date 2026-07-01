@@ -277,7 +277,11 @@ fn parse_ioreg_number<T: std::str::FromStr>(stdout: &str, key: &str) -> Option<T
 
 #[cfg(target_os = "macos")]
 fn parse_ioreg_embedded_number<T: std::str::FromStr>(stdout: &str, key: &str) -> Option<T> {
-    let needles = [format!("\"{key}\"="), format!("\"{key}\" = "), format!("{key}=")];
+    let needles = [
+        format!("\"{key}\"="),
+        format!("\"{key}\" = "),
+        format!("{key}="),
+    ];
 
     for line in stdout.lines() {
         for needle in &needles {
@@ -286,7 +290,9 @@ fn parse_ioreg_embedded_number<T: std::str::FromStr>(stdout: &str, key: &str) ->
                 let value = rest
                     .trim_start()
                     .trim_start_matches('"')
-                    .split(|c: char| c == ',' || c == '}' || c == ')' || c == '"' || c.is_whitespace())
+                    .split(|c: char| {
+                        c == ',' || c == '}' || c == ')' || c == '"' || c.is_whitespace()
+                    })
                     .next()
                     .unwrap_or("");
 
@@ -302,7 +308,11 @@ fn parse_ioreg_embedded_number<T: std::str::FromStr>(stdout: &str, key: &str) ->
 
 #[cfg(target_os = "macos")]
 fn parse_ioreg_embedded_string(stdout: &str, key: &str) -> Option<String> {
-    let needles = [format!("\"{key}\"=\""), format!("\"{key}\" = \""), format!("{key}=\"")];
+    let needles = [
+        format!("\"{key}\"=\""),
+        format!("\"{key}\" = \""),
+        format!("{key}=\""),
+    ];
 
     for line in stdout.lines() {
         for needle in &needles {
@@ -498,7 +508,8 @@ fn build_charger_info(ioreg_stdout: &str, name: String, wattage: u32) -> Charger
         .unwrap_or(0);
     let external_connected = parse_ioreg_bool(ioreg_stdout, "ExternalConnected");
     let adapter_name = parse_ioreg_embedded_string(ioreg_stdout, "Name");
-    let adapter_wattage = parse_ioreg_embedded_number::<u32>(ioreg_stdout, "Watts").unwrap_or(wattage);
+    let adapter_wattage =
+        parse_ioreg_embedded_number::<u32>(ioreg_stdout, "Watts").unwrap_or(wattage);
 
     if !external_connected {
         return ChargerInfo {
@@ -511,10 +522,12 @@ fn build_charger_info(ioreg_stdout: &str, name: String, wattage: u32) -> Charger
     }
 
     ChargerInfo {
-        name: adapter_name.unwrap_or_else(|| if name.is_empty() {
-            "USB-C Power Adapter".to_string()
-        } else {
-            name
+        name: adapter_name.unwrap_or_else(|| {
+            if name.is_empty() {
+                "USB-C Power Adapter".to_string()
+            } else {
+                name
+            }
         }),
         wattage: adapter_wattage,
         connected: true,

@@ -92,7 +92,9 @@ fn config_dir() -> PathBuf {
 
 fn shared_runtime_dir() -> PathBuf {
     let path = PathBuf::from(SHARED_RUNTIME_DIR);
-    let _ = fs::create_dir_all(&path);
+    if fs::create_dir_all(&path).is_ok() {
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o755));
+    }
     path
 }
 
@@ -301,10 +303,9 @@ where
 
 fn enable_charging(shared: &SharedState) -> Result<(), String> {
     with_smc(shared, smc::enable_charging)?;
-    if let Ok(mut state) = shared.data.lock() {
-        state.charging_disabled = false;
-        save_runtime(&state.clone())?;
-    }
+    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+    state.charging_disabled = false;
+    save_runtime(&state.clone())?;
     log_line("charging enabled");
     clear_error(shared);
     Ok(())
@@ -312,10 +313,9 @@ fn enable_charging(shared: &SharedState) -> Result<(), String> {
 
 fn disable_charging(shared: &SharedState) -> Result<(), String> {
     with_smc(shared, smc::disable_charging)?;
-    if let Ok(mut state) = shared.data.lock() {
-        state.charging_disabled = true;
-        save_runtime(&state.clone())?;
-    }
+    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+    state.charging_disabled = true;
+    save_runtime(&state.clone())?;
     log_line("charging disabled");
     clear_error(shared);
     Ok(())
@@ -323,10 +323,9 @@ fn disable_charging(shared: &SharedState) -> Result<(), String> {
 
 fn enable_adapter(shared: &SharedState) -> Result<(), String> {
     with_smc(shared, smc::enable_adapter)?;
-    if let Ok(mut state) = shared.data.lock() {
-        state.power_disabled = false;
-        save_runtime(&state.clone())?;
-    }
+    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+    state.power_disabled = false;
+    save_runtime(&state.clone())?;
     log_line("adapter enabled");
     clear_error(shared);
     Ok(())
@@ -334,13 +333,23 @@ fn enable_adapter(shared: &SharedState) -> Result<(), String> {
 
 fn disable_adapter(shared: &SharedState) -> Result<(), String> {
     with_smc(shared, smc::disable_adapter)?;
-    if let Ok(mut state) = shared.data.lock() {
-        state.power_disabled = true;
-        save_runtime(&state.clone())?;
-    }
+    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+    state.power_disabled = true;
+    save_runtime(&state.clone())?;
     log_line("adapter disabled");
     clear_error(shared);
     Ok(())
+}
+
+fn sync_magsafe_led(shared: &SharedState, charging_disabled: bool, percent: u8) {
+    let value = if charging_disabled {
+        0x01
+    } else if percent >= 100 {
+        0x03
+    } else {
+        0x04
+    };
+    let _ = with_smc(shared, |handle| smc::set_magsafe_led(handle, value));
 }
 
 fn set_magsafe_system(shared: &SharedState) {
@@ -358,6 +367,7 @@ fn apply_settings(shared: &SharedState, settings: Settings) -> Result<HelperStat
     if snapshot.settings.magsafe_sync {
         set_magsafe_system(shared);
     }
+    // TODO: adapter_sleep — implement sleep prevention (e.g. caffeinate) when adapter is disabled
     log_line(&format!(
         "settings updated: min={} max={} adapter_sleep={} magsafe_sync={}",
         snapshot.settings.min_charge,
@@ -418,6 +428,15 @@ fn evaluate(shared: &SharedState) -> Result<(), String> {
             state.mode = ChargeMode::Standard;
         }
         save_runtime(&state.clone())?;
+    }
+
+    if snapshot.settings.magsafe_sync {
+        let is_charging_disabled = if disable {
+            true
+        } else {
+            snapshot.charging_disabled
+        };
+        sync_magsafe_led(shared, is_charging_disabled, percent);
     }
 
     Ok(())
@@ -601,7 +620,7 @@ pub fn run_daemon() -> Result<(), String> {
     });
 
     let listener = UnixListener::bind(&socket).map_err(|e| e.to_string())?;
-    let _ = fs::set_permissions(&socket, fs::Permissions::from_mode(0o666));
+    let _ = fs::set_permissions(&socket, fs::Permissions::from_mode(0o660));
     log_line("battery-helper started");
 
     for stream in listener.incoming() {

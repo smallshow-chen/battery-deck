@@ -444,7 +444,6 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
 }
 
 .menu-update-helper {
-  display: flex;
   flex-direction: column;
   gap: 6px;
   margin-top: 2px;
@@ -452,6 +451,10 @@ body ::-webkit-scrollbar-thumb:hover { background: rgba(123, 138, 163, 0.52); }
   border: 1px solid rgba(217, 119, 6, 0.18);
   border-radius: 10px;
   background: rgba(255, 248, 238, 0.86);
+}
+
+.menu-update-helper:not([hidden]) {
+  display: flex;
 }
 
 /* ── Notice banners ─────────────────────────────────────────────────────── */

@@ -191,6 +191,7 @@ function cacheDom() {
 
   dom.appVersionBadge = document.getElementById("app-version-badge");
   dom.menuAppVersion = document.getElementById("menu-app-version");
+  dom.menuHelperVersion = document.getElementById("menu-helper-version");
 
   scrollContainers = [dom.dashboardScroll].filter(Boolean);
 }
@@ -252,8 +253,6 @@ function initializeTheme() {
 
   if (mediaThemeQuery?.addEventListener) {
     mediaThemeQuery.addEventListener("change", onSystemThemeChange);
-  } else if (mediaThemeQuery?.addListener) {
-    mediaThemeQuery.addListener(onSystemThemeChange);
   }
 }
 
@@ -1192,9 +1191,10 @@ function updateUpdateCard() {
 
   let statusText = __("update.status.idle");
   if (!updateState.configured) {
-    statusText = updateState.error || __("update.status.unconfigured");
+    const err = updateState.error;
+    statusText = err ? (err.startsWith("update.status.") ? __(err) : err) : __("update.status.unconfigured");
   } else if (updateState.error) {
-    statusText = updateState.error;
+    statusText = updateState.error.startsWith("update.status.") ? __(updateState.error) : updateState.error;
   } else if (updateState.checking) {
     statusText = __("update.status.checking");
   } else if (updateState.downloadInProgress) {
@@ -1387,7 +1387,18 @@ async function refreshHelperUpdateStatus() {
   try {
     helperUpdateState = await invoke("get_helper_version_status");
     updateUpdateCard();
+    updateHelperVersionDisplay();
   } catch (err) {
     console.warn("Could not refresh helper update status:", err);
   }
+}
+
+function updateHelperVersionDisplay() {
+  if (!dom.menuHelperVersion) return;
+  const installed = helperUpdateState.installedVersion || "--";
+  dom.menuHelperVersion.textContent = `v${helperUpdateState.bundledVersion} / v${installed}`;
+  dom.menuHelperVersion.title = __("menu.helper_version_tooltip", {
+    bundled: helperUpdateState.bundledVersion || "?",
+    installed: installed,
+  });
 }
