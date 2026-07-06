@@ -63,10 +63,12 @@ fi
 VERSION="$1"
 TAG="v$VERSION"
 ARCH="$(uname -m)"
-ZIP_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.zip"
-DMG_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.dmg"
-UPDATER_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.app.tar.gz"
-UPDATER_SIG_PATH="$RELEASE_DIR/Battery Deck_${VERSION}_${ARCH}.app.tar.gz.sig"
+PRODUCT_NAME="$(plutil -extract productName raw -o - "$TAURI_CONFIG")"
+PRODUCT_SLUG="${PRODUCT_NAME// /.}"
+ZIP_PATH="$RELEASE_DIR/${PRODUCT_SLUG}_${VERSION}_${ARCH}.zip"
+DMG_PATH="$RELEASE_DIR/${PRODUCT_SLUG}_${VERSION}_${ARCH}.dmg"
+UPDATER_PATH="$RELEASE_DIR/${PRODUCT_SLUG}_${VERSION}_${ARCH}.app.tar.gz"
+UPDATER_SIG_PATH="$RELEASE_DIR/${PRODUCT_SLUG}_${VERSION}_${ARCH}.app.tar.gz.sig"
 LATEST_JSON_PATH="$RELEASE_DIR/latest.json"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -77,6 +79,7 @@ fi
 require_command git
 require_command gh
 require_command perl
+require_command plutil
 
 cd "$ROOT_DIR"
 require_clean_worktree
@@ -95,7 +98,7 @@ if gh release view "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+if [[ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" && -z "${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]]; then
   cat >&2 <<'EOF'
 TAURI_SIGNING_PRIVATE_KEY is not set.
 
@@ -103,6 +106,8 @@ This release flow calls `scripts/package-release.sh`, which builds Tauri updater
 
 Set these environment variables before running release:
   export TAURI_SIGNING_PRIVATE_KEY="$(cat /path/to/tauri.key)"
+  # or:
+  export TAURI_SIGNING_PRIVATE_KEY_PATH="/path/to/tauri.key"
   export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"  # only if needed
 
 If you are releasing from CI, inject the same values from repository secrets.

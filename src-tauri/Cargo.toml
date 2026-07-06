@@ -1,6 +1,6 @@
 [package]
 name = "battery-deck"
-version = "0.0.3"
+version = "0.0.4"
 description = "Battery charge management for Apple Silicon Macs"
 authors = ["smallshow"]
 edition = "2021"
