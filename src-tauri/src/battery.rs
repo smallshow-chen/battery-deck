@@ -49,6 +49,7 @@ pub struct HelperState {
     pub power_disabled: bool,
     pub supported: bool,
     pub control_available: bool,
+    pub adapter_control_available: bool,
     pub settings: Settings,
     pub last_error: Option<String>,
 }
@@ -70,6 +71,7 @@ pub struct BatteryState {
     pub magsafe_sync: bool,
     pub supported: bool,
     pub control_available: bool,
+    pub adapter_control_available: bool,
     pub last_error: Option<String>,
 }
 

@@ -15,6 +15,7 @@ const {
 
 const THEME_STORAGE_KEY = "battery-toolkit-theme";
 const THEME_OPTIONS = new Set(["light", "dark", "system"]);
+const CONTROL_COMMAND_TIMEOUT_MS = 6000;
 
 let state = {
   enabled: false,
@@ -34,6 +35,7 @@ let state = {
   magsafeSync: false,
   supported: true,
   controlAvailable: false,
+  adapterControlAvailable: false,
   lastError: null,
 };
 
@@ -66,6 +68,19 @@ let helperUpdateState = {
   upgradeNeeded: false,
   installed: false,
 };
+
+function invokeWithTimeout(command, args, timeoutMs = CONTROL_COMMAND_TIMEOUT_MS) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${command} timed out`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([invoke(command, args), timeout]).finally(() => {
+    clearTimeout(timeoutId);
+  });
+}
 
 let settingsDirty = false;
 let pollTimer = null;
@@ -347,7 +362,7 @@ function updateSystemInfo(info) {
   dom.deviceActivated.textContent = info.activationDate || "--";
 }
 
-async function loadDashboardSnapshot() {
+async function loadDashboardSnapshot({ silent = false } = {}) {
   try {
     const snapshot = await invoke("get_dashboard_snapshot");
     if (!snapshot) return;
@@ -378,15 +393,32 @@ async function loadDashboardSnapshot() {
     scheduleUiUpdate();
   } catch (err) {
     console.error("Failed to load dashboard snapshot:", err);
+    if (silent && formatError(err).includes("Resource temporarily unavailable")) {
+      state.lastError = null;
+      serviceState.lastError = null;
+      scheduleUiUpdate();
+      return;
+    }
     state.controlAvailable = false;
     state.lastError = formatError(err);
     serviceState.controlAvailable = false;
     serviceState.lastError = formatError(err);
     scheduleUiUpdate();
-    if (serviceState.running) {
+    if (!silent && serviceState.running) {
       showError("Could not load dashboard snapshot: " + formatError(err));
     }
   }
+}
+
+async function refreshDashboardAfterControl() {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await loadDashboardSnapshot({ silent: true });
+    if (!state.lastError || !String(state.lastError).includes("Resource temporarily unavailable")) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  console.warn("Dashboard refresh after control action did not settle:", state.lastError);
 }
 
 async function refreshServiceLogs() {
@@ -670,9 +702,10 @@ async function onChargeToFull() {
   if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
-    await invoke("charge_to_full");
+    const helperState = await invokeWithTimeout("charge_to_full");
+    applyHelperState(helperState);
     showSuccess(__("msg.charging_full"));
-    await loadDashboardSnapshot();
+    await refreshDashboardAfterControl();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -685,9 +718,10 @@ async function onChargeToLimit() {
   if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
-    await invoke("charge_to_limit");
+    const helperState = await invokeWithTimeout("charge_to_limit");
+    applyHelperState(helperState);
     showSuccess(__("msg.charging_limit"));
-    await loadDashboardSnapshot();
+    await refreshDashboardAfterControl();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -700,9 +734,10 @@ async function onResetChargeMode() {
   if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
-    await invoke("reset_charge_mode");
+    const helperState = await invokeWithTimeout("reset_charge_mode");
+    applyHelperState(helperState);
     showSuccess(__("msg.mode_reset"));
-    await loadDashboardSnapshot();
+    await refreshDashboardAfterControl();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -715,9 +750,12 @@ async function onDisableCharging() {
   if (!canUseChargeActions()) return;
   try {
     setButtonsDisabled(true);
-    await invoke("disable_charging_cmd");
+    const helperState = await invokeWithTimeout("disable_charging_cmd");
+    applyHelperState(helperState);
+    state.chargingDisabled = true;
+    scheduleUiUpdate();
     showSuccess(__("msg.charging_disabled"));
-    await loadDashboardSnapshot();
+    await refreshDashboardAfterControl();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -727,17 +765,22 @@ async function onDisableCharging() {
 }
 
 async function onToggleAdapter() {
-  if (!canUseChargeActions()) return;
+  if (!canUseChargeActions() || !state.adapterControlAvailable) return;
   try {
     setButtonsDisabled(true);
     if (state.powerDisabled) {
-      await invoke("enable_adapter_cmd");
+      const helperState = await invokeWithTimeout("enable_adapter_cmd");
+      applyHelperState(helperState);
+      state.powerDisabled = false;
       showSuccess(__("msg.adapter_enabled"));
     } else {
-      await invoke("disable_adapter_cmd");
+      const helperState = await invokeWithTimeout("disable_adapter_cmd");
+      applyHelperState(helperState);
+      state.powerDisabled = true;
       showSuccess(__("msg.adapter_disabled"));
     }
-    await loadDashboardSnapshot();
+    scheduleUiUpdate();
+    await refreshDashboardAfterControl();
   } catch (err) {
     showError("Failed: " + formatError(err));
   } finally {
@@ -1163,9 +1206,14 @@ function canUseChargeActions() {
 function updateControlAvailability() {
   const available = state.controlAvailable && serviceState.controlAvailable;
   const actionsAvailable = available && hasConnectedAdapter();
+  const adapterActionAvailable = actionsAvailable && state.adapterControlAvailable;
 
-  dom.rootNotice.style.display = available ? "none" : "flex";
-  setButtonsDisabled(!actionsAvailable);
+  dom.rootNotice.style.display = serviceState.running ? "none" : "flex";
+  dom.btnChargeFull.disabled = !actionsAvailable;
+  dom.btnChargeLimit.disabled = !actionsAvailable;
+  dom.btnResetChargeMode.disabled = !actionsAvailable;
+  dom.btnDisableCharging.disabled = !actionsAvailable;
+  dom.btnToggleAdapter.disabled = !adapterActionAvailable;
   dom.minChargeSlider.disabled = !available;
   dom.maxChargeSlider.disabled = !available;
   dom.toggleAdapterSleep.disabled = !available;
@@ -1405,6 +1453,26 @@ function formatError(err) {
   if (err && err.message) return err.message;
   if (err && err.toString) return err.toString();
   return "Unknown error";
+}
+
+function applyHelperState(helperState) {
+  if (!helperState) return;
+  state.mode = helperState.mode;
+  state.chargingDisabled = !!helperState.chargingDisabled;
+  state.powerDisabled = !!helperState.powerDisabled;
+  state.supported = !!helperState.supported;
+  state.controlAvailable = !!helperState.controlAvailable;
+  state.adapterControlAvailable = !!helperState.adapterControlAvailable;
+  if (helperState.settings) {
+    state.minCharge = helperState.settings.minCharge;
+    state.maxCharge = helperState.settings.maxCharge;
+    state.adapterSleep = helperState.settings.adapterSleep;
+    state.magsafeSync = helperState.settings.magsafeSync;
+  }
+  state.lastError = helperState.lastError || null;
+  serviceState.running = true;
+  serviceState.controlAvailable = !!helperState.controlAvailable;
+  serviceState.lastError = null;
 }
 
 async function refreshUpdateStatus() {

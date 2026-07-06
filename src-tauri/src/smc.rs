@@ -47,6 +47,8 @@ const K_SMC_READ_KEY: u8 = 5;
 const K_SMC_WRITE_KEY: u8 = 6;
 const K_SMC_GET_KEY_INFO: u8 = 9;
 const K_SMC_SUCCESS: u8 = 0;
+const SMC_RETRY_ATTEMPTS: usize = 3;
+const SMC_RETRY_DELAY_MS: u64 = 25;
 
 // ── SMC Data Structures ─────────────────────────────────────────────────────
 
@@ -239,25 +241,42 @@ fn smc_close(connect: u32) {
 /// Perform an SMC call: takes an input param struct, returns the output param struct.
 #[cfg(target_os = "macos")]
 fn smc_call(connect: u32, input: &SMCParamStructRaw) -> io::Result<SMCParamStructRaw> {
-    unsafe {
-        let mut output = *input;
-        let mut out_size = std::mem::size_of::<SMCParamStructRaw>();
-        let kr = IOConnectCallStructMethod(
-            connect,
-            K_SMC_HANDLE_YPC_EVENT as u32,
-            input as *const _ as *const u8,
-            std::mem::size_of::<SMCParamStructRaw>(),
-            &mut output as *mut _ as *mut u8,
-            &mut out_size,
-        );
-        if kr != 0 {
+    let mut last_error = io::Error::new(io::ErrorKind::Other, "SMC call did not run");
+    for attempt in 0..SMC_RETRY_ATTEMPTS {
+        unsafe {
+            let mut output = *input;
+            let mut out_size = std::mem::size_of::<SMCParamStructRaw>();
+            let kr = IOConnectCallStructMethod(
+                connect,
+                K_SMC_HANDLE_YPC_EVENT as u32,
+                input as *const _ as *const u8,
+                std::mem::size_of::<SMCParamStructRaw>(),
+                &mut output as *mut _ as *mut u8,
+                &mut out_size,
+            );
+            if kr == 0 {
+                return Ok(output);
+            }
+            last_error = io::Error::from_raw_os_error(kr);
+            if attempt + 1 < SMC_RETRY_ATTEMPTS
+                && matches!(
+                    last_error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                )
+            {
+                std::thread::sleep(std::time::Duration::from_millis(SMC_RETRY_DELAY_MS));
+                continue;
+            }
             return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("IOConnectCallStructMethod failed: 0x{:x}", kr),
+                last_error.kind(),
+                format!(
+                    "IOConnectCallStructMethod failed: 0x{:x} ({})",
+                    kr, last_error
+                ),
             ));
         }
-        Ok(output)
     }
+    Err(last_error)
 }
 
 /// Get key info (data size and type) for an SMC key.
@@ -313,7 +332,7 @@ fn smc_read_key(connect: u32, key: &[u8; 4]) -> io::Result<(Vec<u8>, SMCKeyInfoD
 }
 
 /// Keys that are write-only or may not reflect the written value on immediate read-back.
-const WRITE_ONLY_KEYS: &[[u8; 4]] = &[*keys::CHTE, *keys::ACLC];
+const WRITE_ONLY_KEYS: &[[u8; 4]] = &[*keys::CHTE, *keys::CHIE, *keys::CH0J, *keys::ACLC];
 
 /// Write data to an SMC key, then verify by reading back.
 /// Verification is skipped for known write-only keys.
@@ -375,7 +394,7 @@ pub mod keys {
 #[serde(rename_all = "camelCase")]
 pub struct SupportedKeys {
     pub charge_key: &'static str,
-    pub adapter_key: &'static str,
+    pub adapter_key: Option<&'static str>,
 }
 
 pub fn probe_supported(handle: &SmcHandle) -> io::Result<SupportedKeys> {
@@ -391,14 +410,11 @@ pub fn probe_supported(handle: &SmcHandle) -> io::Result<SupportedKeys> {
     };
 
     let adapter_key = if handle.get_key_info(keys::CHIE).is_ok() {
-        "CHIE"
+        Some("CHIE")
     } else if handle.get_key_info(keys::CH0J).is_ok() {
-        "CH0J"
+        Some("CH0J")
     } else {
-        return Err(io::Error::new(
-            io::ErrorKind::Unsupported,
-            "No supported adapter key found",
-        ));
+        None
     };
 
     Ok(SupportedKeys {

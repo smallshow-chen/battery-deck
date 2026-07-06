@@ -52,6 +52,7 @@ if [[ "$reinstall_root_helper" -eq 1 ]]; then
   sudo install -d -m 755 "/Library/Application Support/BatteryToolkit/bin"
   if [[ -f "$SYSTEM_PLIST_PATH" ]]; then
     sudo launchctl bootout system/"$SERVICE_LABEL" >/dev/null 2>&1 || true
+    sudo install -d -m 711 /tmp/battery-toolkit
     sudo cp -f "target/debug/battery-helper" "$SYSTEM_HELPER_PATH"
     sudo chown root:wheel "$SYSTEM_HELPER_PATH"
     sudo chmod 755 "$SYSTEM_HELPER_PATH"

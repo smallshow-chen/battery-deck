@@ -338,7 +338,7 @@ fn install_root_service() -> Result<(), String> {
         .unwrap_or_else(std::env::temp_dir);
 
     let body = format!(
-        "install -d -o root -g wheel -m 755 {support_dir}\ninstall -d -o root -g wheel -m 755 {bin_dir}\ninstall -d -m 755 {runtime_dir}\ninstall -o root -g wheel -m 755 {source} {target}\ninstall -d -o root -g wheel -m 755 /Library/LaunchDaemons\ninstall -o root -g wheel -m 644 {plist_src} {plist_dst}\nlaunchctl bootout system/{label} >/dev/null 2>&1 || true\nlaunchctl enable system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid} {stdout_log} {stderr_log}\nlaunchctl bootstrap system {plist_dst}\nlaunchctl kickstart -k system/{label} >/dev/null 2>&1 || true\n",
+        "install -d -o root -g wheel -m 755 {support_dir}\ninstall -d -o root -g wheel -m 755 {bin_dir}\ninstall -d -m 711 {runtime_dir}\ninstall -o root -g wheel -m 755 {source} {target}\ninstall -d -o root -g wheel -m 755 /Library/LaunchDaemons\ninstall -o root -g wheel -m 644 {plist_src} {plist_dst}\nlaunchctl bootout system/{label} >/dev/null 2>&1 || true\nlaunchctl enable system/{label} >/dev/null 2>&1 || true\nrm -f {socket} {pid} {stdout_log} {stderr_log}\nlaunchctl bootstrap system {plist_dst}\nlaunchctl kickstart -k system/{label} >/dev/null 2>&1 || true\n",
         support_dir = quote_shell(helper::system_helper_root().to_string_lossy().as_ref()),
         bin_dir = quote_shell(
             target

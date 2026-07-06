@@ -5,19 +5,24 @@ use crate::smc::{self, SmcHandle};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::env;
+use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU32, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SOCKET_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REQUEST_SIZE: usize = 64 * 1024;
+const MAX_ACTIVE_CONNECTIONS: usize = 16;
+const CONNECTION_REJECT_LOG_INTERVAL: Duration = Duration::from_secs(30);
+const READ_ONLY_COMMANDS: &[&str] = &["ping", "get_status", "get_state", "get_settings"];
 
 fn set_socket_timeouts(stream: &UnixStream) -> Result<(), String> {
     stream
@@ -55,9 +60,24 @@ fn get_effective_uid() -> u32 {
     uid
 }
 
+fn console_uid() -> Option<u32> {
+    fs::metadata("/dev/console")
+        .ok()
+        .map(|metadata| metadata.uid())
+}
+
+fn authorized_client_uid() -> u32 {
+    let uid = get_effective_uid();
+    if uid == 0 {
+        console_uid().unwrap_or(uid)
+    } else {
+        uid
+    }
+}
+
 fn check_peer_access(stream: &UnixStream) -> Result<(), String> {
     let peer = peer_uid(stream)?;
-    let owner = get_effective_uid();
+    let owner = authorized_client_uid();
     if peer != 0 && peer != owner {
         return Err(format!(
             "Access denied: peer uid {} != owner uid {}",
@@ -73,6 +93,9 @@ struct SharedState {
     data: Arc<Mutex<HelperState>>,
     last_battery_percent: Arc<Mutex<Option<u8>>>,
     last_is_plugged: Arc<Mutex<bool>>,
+    last_magsafe_led: Arc<Mutex<Option<u8>>>,
+    active_connections: Arc<AtomicUsize>,
+    last_connection_reject_log: Arc<Mutex<Option<Instant>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -149,7 +172,7 @@ fn config_dir() -> PathBuf {
 fn shared_runtime_dir() -> PathBuf {
     let path = PathBuf::from(SHARED_RUNTIME_DIR);
     if fs::create_dir_all(&path).is_ok() {
-        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o750));
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o711));
     }
     path
 }
@@ -291,6 +314,10 @@ fn log_timestamp() -> String {
 }
 
 fn log_command(command: &str, detail: Option<&str>) {
+    if detail.is_none() && READ_ONLY_COMMANDS.contains(&command) {
+        return;
+    }
+
     match detail {
         Some(detail) if !detail.is_empty() => log_line(&format!("[command] {command}: {detail}")),
         _ => log_line(&format!("[command] {command}")),
@@ -328,6 +355,7 @@ fn initial_state() -> HelperState {
         power_disabled: runtime.power_disabled.unwrap_or(false),
         supported: false,
         control_available: false,
+        adapter_control_available: false,
         settings,
         last_error: None,
     }
@@ -357,7 +385,33 @@ where
     action(handle).map_err(|e| e.to_string())
 }
 
+fn is_transient_resource_error(message: &str) -> bool {
+    message.contains("Resource temporarily unavailable")
+        || message.contains("os error 35")
+        || message.contains("temporarily unavailable")
+}
+
+fn run_smc_action_async(
+    shared: SharedState,
+    label: &'static str,
+    action: fn(&SmcHandle) -> std::io::Result<()>,
+) {
+    std::thread::spawn(move || {
+        if let Err(error) = with_smc(&shared, action) {
+            let message = format!("{label} failed: {error}");
+            if is_transient_resource_error(&error) {
+                log_line(&message);
+            } else {
+                set_error(&shared, message);
+            }
+        }
+    });
+}
+
 fn enable_charging(shared: &SharedState) -> Result<(), String> {
+    if !current_state(shared)?.charging_disabled {
+        return Ok(());
+    }
     with_smc(shared, smc::enable_charging)?;
     let mut state = shared.data.lock().map_err(|e| e.to_string())?;
     state.charging_disabled = false;
@@ -368,6 +422,9 @@ fn enable_charging(shared: &SharedState) -> Result<(), String> {
 }
 
 fn disable_charging(shared: &SharedState) -> Result<(), String> {
+    if current_state(shared)?.charging_disabled {
+        return Ok(());
+    }
     with_smc(shared, smc::disable_charging)?;
     let mut state = shared.data.lock().map_err(|e| e.to_string())?;
     state.charging_disabled = true;
@@ -378,22 +435,42 @@ fn disable_charging(shared: &SharedState) -> Result<(), String> {
 }
 
 fn enable_adapter(shared: &SharedState) -> Result<(), String> {
-    with_smc(shared, smc::enable_adapter)?;
-    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
-    state.power_disabled = false;
-    save_runtime(&state.clone())?;
+    if !current_state(shared)?.adapter_control_available {
+        return Err("Power adapter control is not available on this device".to_string());
+    }
+    let snapshot = current_state(shared)?;
+    if !snapshot.power_disabled {
+        return Ok(());
+    }
+    {
+        let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+        state.power_disabled = false;
+        let snapshot = state.clone();
+        save_runtime(&snapshot)?;
+    }
     log_line("adapter enabled");
     clear_error(shared);
+    run_smc_action_async(shared.clone(), "enable_adapter", smc::enable_adapter);
     Ok(())
 }
 
 fn disable_adapter(shared: &SharedState) -> Result<(), String> {
-    with_smc(shared, smc::disable_adapter)?;
-    let mut state = shared.data.lock().map_err(|e| e.to_string())?;
-    state.power_disabled = true;
-    save_runtime(&state.clone())?;
+    if !current_state(shared)?.adapter_control_available {
+        return Err("Power adapter control is not available on this device".to_string());
+    }
+    let snapshot = current_state(shared)?;
+    if snapshot.power_disabled {
+        return Ok(());
+    }
+    {
+        let mut state = shared.data.lock().map_err(|e| e.to_string())?;
+        state.power_disabled = true;
+        let snapshot = state.clone();
+        save_runtime(&snapshot)?;
+    }
     log_line("adapter disabled");
     clear_error(shared);
+    run_smc_action_async(shared.clone(), "disable_adapter", smc::disable_adapter);
     Ok(())
 }
 
@@ -405,10 +482,31 @@ fn sync_magsafe_led(shared: &SharedState, charging_disabled: bool, percent: u8) 
     } else {
         0x04
     };
+
+    if let Ok(mut last_value) = shared.last_magsafe_led.lock() {
+        if last_value.as_ref().is_some_and(|last| *last == value) {
+            return;
+        }
+        if with_smc(shared, |handle| smc::set_magsafe_led(handle, value)).is_ok() {
+            *last_value = Some(value);
+        }
+        return;
+    }
+
     let _ = with_smc(shared, |handle| smc::set_magsafe_led(handle, value));
 }
 
 fn set_magsafe_system(shared: &SharedState) {
+    if let Ok(mut last_value) = shared.last_magsafe_led.lock() {
+        if last_value.as_ref().is_some_and(|last| *last == 0x00) {
+            return;
+        }
+        if with_smc(shared, |handle| smc::set_magsafe_led(handle, 0x00)).is_ok() {
+            *last_value = Some(0x00);
+        }
+        return;
+    }
+
     let _ = with_smc(shared, |handle| smc::set_magsafe_led(handle, 0x00));
 }
 
@@ -493,12 +591,15 @@ fn evaluate(shared: &SharedState) -> Result<(), String> {
     }
 
     if let Ok(mut state) = shared.data.lock() {
+        let previous_mode = state.mode;
         if matches!(state.mode, ChargeMode::ToLimit) && percent >= state.settings.max_charge {
             state.mode = ChargeMode::Standard;
         } else if matches!(state.mode, ChargeMode::ToFull) && percent >= 100 {
             state.mode = ChargeMode::Standard;
         }
-        save_runtime(&state.clone())?;
+        if state.mode != previous_mode {
+            save_runtime(&state.clone())?;
+        }
     }
 
     if snapshot.settings.magsafe_sync {
@@ -541,10 +642,7 @@ fn handle_request(shared: &SharedState, request: Request) -> Response {
         "enable_adapter" => enable_adapter(shared)
             .and_then(|_| current_state(shared))
             .map(|state| json!(state)),
-        "reset_charge_mode" => update_mode(shared, ChargeMode::Standard)
-            .and_then(|_| enable_charging(shared))
-            .and_then(|_| current_state(shared))
-            .map(|state| json!(state)),
+        "reset_charge_mode" => update_mode(shared, ChargeMode::Standard).map(|state| json!(state)),
         _ => Err(format!("Unknown helper command: {}", request.command)),
     };
 
@@ -617,6 +715,65 @@ fn remove_socket() {
     }
 }
 
+fn set_socket_access(path: &PathBuf) -> Result<(), String> {
+    let uid = authorized_client_uid();
+    let raw_path =
+        CString::new(path.as_os_str().as_bytes()).map_err(|_| "Invalid socket path".to_string())?;
+    let result = unsafe { libc::chown(raw_path.as_ptr(), uid, u32::MAX) };
+    if result != 0 {
+        return Err(format!(
+            "Failed to set socket owner: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())
+}
+
+struct ConnectionGuard {
+    active_connections: Arc<AtomicUsize>,
+}
+
+impl ConnectionGuard {
+    fn acquire(active_connections: Arc<AtomicUsize>) -> Result<Self, ()> {
+        let result = active_connections.fetch_update(
+            AtomicOrdering::AcqRel,
+            AtomicOrdering::Acquire,
+            |current| {
+                if current < MAX_ACTIVE_CONNECTIONS {
+                    Some(current + 1)
+                } else {
+                    None
+                }
+            },
+        );
+
+        match result {
+            Ok(_) => Ok(Self { active_connections }),
+            Err(_) => Err(()),
+        }
+    }
+}
+
+impl Drop for ConnectionGuard {
+    fn drop(&mut self) {
+        self.active_connections.fetch_sub(1, AtomicOrdering::AcqRel);
+    }
+}
+
+fn log_connection_rejected(shared: &SharedState) {
+    let Ok(mut last_log_at) = shared.last_connection_reject_log.lock() else {
+        return;
+    };
+    if last_log_at
+        .as_ref()
+        .is_some_and(|at| at.elapsed() < CONNECTION_REJECT_LOG_INTERVAL)
+    {
+        return;
+    }
+    *last_log_at = Some(Instant::now());
+    log_line("connection rejected: too many active clients");
+}
+
 pub fn helper_logs(lines: usize) -> Result<String, String> {
     let file = File::open(helper_log_path()).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
@@ -677,14 +834,38 @@ pub fn run_daemon() -> Result<(), String> {
             None
         }
     };
-    let supported = smc_handle
+    let supported_keys = match smc_handle.as_ref() {
+        Some(handle) => match smc::probe_supported(handle) {
+            Ok(keys) => {
+                match keys.adapter_key {
+                    Some(adapter_key) => log_line(&format!(
+                        "SMC support detected: charge_key={} adapter_key={}",
+                        keys.charge_key, adapter_key
+                    )),
+                    None => log_line(&format!(
+                        "SMC support detected: charge_key={} adapter_key=unavailable",
+                        keys.charge_key
+                    )),
+                }
+                Some(keys)
+            }
+            Err(error) => {
+                log_line(&format!("SMC support probe failed: {}", error));
+                None
+            }
+        },
+        None => None,
+    };
+    let supported = supported_keys.is_some();
+    let adapter_control_available = supported_keys
         .as_ref()
-        .and_then(|handle| smc::probe_supported(handle).ok())
+        .and_then(|keys| keys.adapter_key)
         .is_some();
 
     let mut state = initial_state();
     state.supported = supported;
     state.control_available = supported && smc_handle.is_some();
+    state.adapter_control_available = adapter_control_available && smc_handle.is_some();
 
     let is_plugged = crate::battery::get_is_plugged();
     let battery_percent = get_battery_percent();
@@ -694,6 +875,9 @@ pub fn run_daemon() -> Result<(), String> {
         data: Arc::new(Mutex::new(state)),
         last_battery_percent: Arc::new(Mutex::new(Some(battery_percent))),
         last_is_plugged: Arc::new(Mutex::new(is_plugged)),
+        last_magsafe_led: Arc::new(Mutex::new(None)),
+        active_connections: Arc::new(AtomicUsize::new(0)),
+        last_connection_reject_log: Arc::new(Mutex::new(None)),
     };
 
     if let Ok(snapshot) = current_state(&shared) {
@@ -717,14 +901,22 @@ pub fn run_daemon() -> Result<(), String> {
     });
 
     let listener = UnixListener::bind(&socket).map_err(|e| e.to_string())?;
-    let _ = fs::set_permissions(&socket, fs::Permissions::from_mode(0o660));
+    set_socket_access(&socket)?;
     log_line("battery-helper started");
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
+                let guard = match ConnectionGuard::acquire(shared.active_connections.clone()) {
+                    Ok(guard) => guard,
+                    Err(()) => {
+                        log_connection_rejected(&shared);
+                        continue;
+                    }
+                };
                 let shared = shared.clone();
                 std::thread::spawn(move || {
+                    let _guard = guard;
                     if let Err(error) = handle_stream(&shared, stream) {
                         set_error(&shared, format!("connection error: {}", error));
                     }

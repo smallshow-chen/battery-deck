@@ -152,6 +152,7 @@ fn fallback_helper_state(error: Option<String>) -> battery::HelperState {
         power_disabled: false,
         supported: false,
         control_available: false,
+        adapter_control_available: false,
         settings: helper::load_settings(),
         last_error: error,
     }
@@ -179,6 +180,7 @@ fn build_battery_state_with_cache(
         magsafe_sync: helper_state.settings.magsafe_sync,
         supported: helper_state.supported,
         control_available: helper_state.control_available,
+        adapter_control_available: helper_state.adapter_control_available,
         last_error: helper_state.last_error.clone(),
     }
 }
@@ -368,6 +370,7 @@ fn refresh_tray_menu(app: &AppHandle) -> Result<(), String> {
 
     with_tray_handles(app, |tray| {
         let control_ready = battery_state.control_available && service_status.control_available;
+        let adapter_control_ready = control_ready && battery_state.adapter_control_available;
 
         let _ = tray.summary_battery.set_text(format!(
             "电池 Battery: {}% ({})",
@@ -387,7 +390,7 @@ fn refresh_tray_menu(app: &AppHandle) -> Result<(), String> {
         let _ = tray.charge_limit.set_enabled(control_ready);
         let _ = tray.resume_limits.set_enabled(control_ready);
         let _ = tray.disable_charging.set_enabled(control_ready);
-        let _ = tray.toggle_adapter.set_enabled(control_ready);
+        let _ = tray.toggle_adapter.set_enabled(adapter_control_ready);
         let _ = tray.install_service.set_enabled(true);
         let _ = tray.start_service.set_enabled(!service_status.running);
         let _ = tray.stop_service.set_enabled(service_status.running);
@@ -654,6 +657,10 @@ fn perform_set_settings(
     Ok(())
 }
 
+fn send_helper_command(command: &str) -> Result<battery::HelperState, String> {
+    service::send_command(command, Value::Null)
+}
+
 fn invalidate_helper_cache_and_refresh_tray(app: &AppHandle) -> Result<(), String> {
     invalidate_helper_cache(app);
     refresh_tray_menu(app)
@@ -741,38 +748,46 @@ fn set_settings(
 }
 
 #[tauri::command]
-fn charge_to_full(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_charge_to_full()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn charge_to_full(app: AppHandle, _: State<AppState>) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("charge_to_full")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
-fn charge_to_limit(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_charge_to_limit()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn charge_to_limit(app: AppHandle, _: State<AppState>) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("charge_to_limit")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
-fn disable_charging_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_disable_charging()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn disable_charging_cmd(
+    app: AppHandle,
+    _: State<AppState>,
+) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("disable_charging")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
-fn disable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_disable_adapter()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn disable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("disable_adapter")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
-fn enable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_enable_adapter()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn enable_adapter_cmd(app: AppHandle, _: State<AppState>) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("enable_adapter")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
@@ -853,10 +868,11 @@ fn get_dashboard_snapshot(app: AppHandle, _: State<AppState>) -> Result<Dashboar
 }
 
 #[tauri::command]
-fn reset_charge_mode(app: AppHandle, _: State<AppState>) -> Result<(), String> {
-    perform_reset_charge_mode()?;
-    let _ = invalidate_helper_cache_and_refresh_tray(&app);
-    Ok(())
+fn reset_charge_mode(app: AppHandle, _: State<AppState>) -> Result<battery::HelperState, String> {
+    let state = send_helper_command("reset_charge_mode")?;
+    invalidate_helper_cache(&app);
+    request_window_refresh_if_visible(&app);
+    Ok(state)
 }
 
 #[tauri::command]
